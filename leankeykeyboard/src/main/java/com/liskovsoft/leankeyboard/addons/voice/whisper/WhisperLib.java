@@ -73,5 +73,16 @@ public final class WhisperLib {
 
     private static native String nativeTranscribe(long context, float[] audio, int threads, String language, boolean translate, int audioCtx);
 
+    /**
+     * Interrupt a transcription in flight. Returns straight away, whisper unwinds on its own.
+     */
+    public static void requestAbort(boolean abort) {
+        if (isAvailable()) {
+            nativeRequestAbort(abort);
+        }
+    }
+
     private static native String nativeSystemInfo();
+
+    private static native void nativeRequestAbort(boolean abort);
 }

@@ -6,6 +6,7 @@ import android.media.AudioRecord;
 import android.media.MediaRecorder.AudioSource;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.Process;
 import android.util.Log;
 
 import java.io.File;
@@ -31,7 +32,13 @@ public class WhisperRecognizer {
     private static final int MIN_RECORDING_MS = 500;
     /** Normalized rms above which we consider the user to be talking */
     private static final float SPEECH_THRESHOLD = 0.015f;
-    private static final int MAX_THREADS = 4;
+    /**
+     * ggml spins its workers between steps, so more threads than the process actually gets
+     * scheduled on makes it slower, not faster.
+     */
+    private static final int MAX_THREADS = 2;
+    /** Give up on a transcription that runs longer than this */
+    private static final long TRANSCRIBE_TIMEOUT_MS = 60_000L;
     /** How many empty reads in a row are tolerated before the mic counts as broken */
     private static final int MAX_EMPTY_READS = 20;
     /** Peak level under which the recording is treated as pure silence */
@@ -101,6 +108,7 @@ public class WhisperRecognizer {
         mCancelled = true;
         mStopRequested = true;
         mRecording = false;
+        WhisperLib.requestAbort(true); // unwind a transcription that is already running
     }
 
     /**
@@ -127,6 +135,10 @@ public class WhisperRecognizer {
         mCancelled = false;
 
         new Thread(() -> {
+            // an ime thread otherwise inherits background scheduling, where ggml's spinning
+            // workers get almost no cpu and the transcription looks like it hung
+            Process.setThreadPriority(Process.THREAD_PRIORITY_FOREGROUND);
+
             try {
                 short[] samples = record(listener);
 
@@ -315,8 +327,25 @@ public class WhisperRecognizer {
         int threads = Math.max(1, Math.min(MAX_THREADS, Runtime.getRuntime().availableProcessors()));
         int audioCtx = audioContextFor(samples.length);
 
+        // a wedged transcription used to keep the recognizer busy for good, which made every
+        // later press of the mic do nothing at all
+        Handler timeout = new Handler(Looper.getMainLooper());
+        Runnable abort = () -> {
+            Log.w(TAG, "transcription exceeded " + TRANSCRIBE_TIMEOUT_MS + " ms, aborting");
+            WhisperLib.requestAbort(true);
+        };
+        timeout.postDelayed(abort, TRANSCRIBE_TIMEOUT_MS);
+
         long startedAt = System.currentTimeMillis();
-        String text = WhisperLib.transcribe(mContextPtr, audio, threads, normalizeLanguage(language), false, audioCtx);
+        String text;
+
+        try {
+            text = WhisperLib.transcribe(mContextPtr, audio, threads, normalizeLanguage(language), false, audioCtx);
+        } finally {
+            timeout.removeCallbacks(abort);
+            WhisperLib.requestAbort(false);
+        }
+
         Log.i(TAG, "transcribed " + msOf(samples.length) + " ms of audio in "
                 + (System.currentTimeMillis() - startedAt) + " ms (threads=" + threads + ", audio_ctx=" + audioCtx + ")");
 

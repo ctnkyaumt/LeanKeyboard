@@ -3,6 +3,7 @@
 
 #include <jni.h>
 #include <android/log.h>
+#include <atomic>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -14,6 +15,18 @@
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, TAG, __VA_ARGS__)
 
 #define JNI_METHOD(name) Java_com_liskovsoft_leankeyboard_addons_voice_whisper_WhisperLib_##name
+
+/** Set from java to interrupt a transcription that is taking too long */
+static std::atomic<bool> g_abort(false);
+
+static bool whisper_abort_callback(void *) {
+    return g_abort.load();
+}
+
+/** Proves whether the encoder is advancing or wedged */
+static void whisper_progress_callback(struct whisper_context *, struct whisper_state *, int progress, void *) {
+    LOGI("transcribe progress %d%%", progress);
+}
 
 extern "C" {
 
@@ -84,6 +97,14 @@ JNI_METHOD(nativeTranscribe)(JNIEnv *env, jclass, jlong contextPtr, jfloatArray 
         params.audio_ctx = audioCtx;
     }
 
+    g_abort.store(false);
+    params.abort_callback = whisper_abort_callback;
+    params.abort_callback_user_data = nullptr;
+    params.progress_callback = whisper_progress_callback;
+    params.progress_callback_user_data = nullptr;
+
+    LOGI("transcribe start: %d samples, %d threads, audio_ctx %d", sampleCount, threads, audioCtx);
+
     std::string result;
 
     whisper_reset_timings(ctx);
@@ -120,6 +141,16 @@ JNI_METHOD(nativeTranscribe)(JNIEnv *env, jclass, jlong contextPtr, jfloatArray 
 JNIEXPORT jstring JNICALL
 JNI_METHOD(nativeSystemInfo)(JNIEnv *env, jclass) {
     return env->NewStringUTF(whisper_print_system_info());
+}
+
+/**
+ * Ask a running transcription to stop. whisper checks this between compute steps, so the
+ * call returns immediately and whisper_full unwinds shortly after.
+ */
+JNIEXPORT void JNICALL
+JNI_METHOD(nativeRequestAbort)(JNIEnv *, jclass, jboolean abort) {
+    g_abort.store(abort == JNI_TRUE);
+    LOGI("abort requested: %d", abort == JNI_TRUE);
 }
 
 } // extern "C"
