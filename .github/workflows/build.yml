@@ -38,7 +38,9 @@ jobs:
             "ndk;27.0.12077973" "cmake;3.22.1"
 
       - name: Build debug APK
-        run: ./gradlew :leankeykeyboard:assembleOriginDebug --stacktrace
+        run: |
+          chmod +x gradlew
+          ./gradlew :leankeykeyboard:assembleOriginDebug --stacktrace
 
       - name: Collect APKs
         id: collect
