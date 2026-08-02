@@ -30,6 +30,10 @@ public class WhisperRecognizer {
     /** Normalized rms above which we consider the user to be talking */
     private static final float SPEECH_THRESHOLD = 0.015f;
     private static final int MAX_THREADS = 4;
+    /** How many empty reads in a row are tolerated before the mic counts as broken */
+    private static final int MAX_EMPTY_READS = 20;
+    /** Peak level under which the recording is treated as pure silence */
+    private static final float SILENCE_PEAK = 0.003f;
 
     private final Context mContext;
     private final WhisperModelManager mModels;
@@ -129,6 +133,13 @@ public class WhisperRecognizer {
                     return;
                 }
 
+                // a mic that only ever returns silence would keep whisper busy for nothing
+                if (peak(samples) < SILENCE_PEAK) {
+                    Log.w(TAG, "mic delivered silence only, skipping transcription");
+                    post(() -> listener.onError("no sound reached the microphone"));
+                    return;
+                }
+
                 post(listener::onRecognizing);
 
                 String text = transcribe(model, samples, language);
@@ -145,12 +156,50 @@ public class WhisperRecognizer {
     }
 
     /**
-     * Release the loaded model. Call it when the keyboard goes away.
+     * Release the loaded model. Safe to call from the main thread: freeing has to wait for a
+     * running transcription, so it is handed to a background thread instead of blocking here.
      */
-    public synchronized void release() {
+    public void release() {
+        cancel();
+
+        new Thread(this::releaseBlocking, "whisper-release").start();
+    }
+
+    private synchronized void releaseBlocking() {
         WhisperLib.freeContext(mContextPtr);
         mContextPtr = 0L;
         mLoadedModel = null;
+    }
+
+    /**
+     * Open the mic, trying the recognition tuned source first. Tv boxes route the remote's mic
+     * through a hid device that only answers on some of these.
+     */
+    private AudioRecord openRecorder(int bufferSize) {
+        IllegalStateException failure = null;
+
+        for (int source : new int[] {AudioSource.VOICE_RECOGNITION, AudioSource.MIC, AudioSource.DEFAULT}) {
+            AudioRecord recorder = null;
+
+            try {
+                recorder = new AudioRecord(source, SAMPLE_RATE, CHANNELS, ENCODING, bufferSize * 2);
+
+                if (recorder.getState() == AudioRecord.STATE_INITIALIZED) {
+                    Log.i(TAG, "mic opened with source " + source);
+                    return recorder;
+                }
+
+                recorder.release();
+            } catch (Exception e) { // SecurityException when the permission was revoked
+                if (recorder != null) {
+                    recorder.release();
+                }
+
+                failure = new IllegalStateException(e.getMessage(), e);
+            }
+        }
+
+        throw failure != null ? failure : new IllegalStateException("can't open the mic, check the permission");
     }
 
     private short[] record(Listener listener) {
@@ -161,12 +210,7 @@ public class WhisperRecognizer {
         }
 
         int bufferSize = Math.max(minBuffer, SAMPLE_RATE / 4 * 2); // at least 250 ms
-        AudioRecord recorder = new AudioRecord(AudioSource.VOICE_RECOGNITION, SAMPLE_RATE, CHANNELS, ENCODING, bufferSize * 2);
-
-        if (recorder.getState() != AudioRecord.STATE_INITIALIZED) {
-            recorder.release();
-            throw new IllegalStateException("can't open the mic, check the permission");
-        }
+        AudioRecord recorder = openRecorder(bufferSize);
 
         short[] chunk = new short[bufferSize / 2];
         short[] captured = new short[SAMPLE_RATE * MAX_RECORDING_MS / 1000];
@@ -180,14 +224,22 @@ public class WhisperRecognizer {
             long startedAt = System.currentTimeMillis();
             long lastSpeechAt = startedAt;
             boolean heardSpeech = false;
+            int emptyReads = 0;
 
             while (mRecording && total < captured.length) {
                 int read = recorder.read(chunk, 0, Math.min(chunk.length, captured.length - total));
 
                 if (read <= 0) {
-                    break;
+                    // some hal implementations hiccup, but a mic that never delivers is broken
+                    if (read < 0 || ++emptyReads > MAX_EMPTY_READS) {
+                        Log.w(TAG, "mic stopped delivering audio, read=" + read + " after " + total + " samples");
+                        break;
+                    }
+
+                    continue;
                 }
 
+                emptyReads = 0;
                 System.arraycopy(chunk, 0, captured, total, read);
                 total += read;
 
@@ -266,6 +318,19 @@ public class WhisperRecognizer {
         int dash = code.indexOf('-');
 
         return (dash > 0 ? code.substring(0, dash) : code).toLowerCase(Locale.ROOT);
+    }
+
+    /**
+     * Loudest normalized sample of the whole recording
+     */
+    private static float peak(short[] samples) {
+        int max = 0;
+
+        for (short sample : samples) {
+            max = Math.max(max, Math.abs(sample));
+        }
+
+        return max / 32768.0f;
     }
 
     private static float rms(short[] samples, int count) {
