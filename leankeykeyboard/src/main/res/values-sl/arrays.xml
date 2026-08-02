@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+    Seed vocabulary for the next word predictor. Only used to complete a word that is
+    already being typed, the actual predictions come from what the user types.
+    -->
+    <string-array name="common_words" translatable="false">
+        <item>in</item>
+        <item>je</item>
+        <item>ne</item>
+        <item>na</item>
+        <item>da</item>
+        <item>se</item>
+        <item>za</item>
+        <item>so</item>
+        <item>ki</item>
+        <item>pa</item>
+        <item>z</item>
+        <item>bo</item>
+        <item>kot</item>
+        <item>ali</item>
+        <item>če</item>
+        <item>ko</item>
+        <item>kaj</item>
+        <item>kje</item>
+        <item>kdo</item>
+        <item>zelo</item>
+        <item>veliko</item>
+        <item>vse</item>
+        <item>ta</item>
+        <item>tudi</item>
+        <item>še</item>
+        <item>samo</item>
+        <item>lahko</item>
+        <item>biti</item>
+        <item>imeti</item>
+        <item>iti</item>
+        <item>videti</item>
+        <item>vedeti</item>
+        <item>reči</item>
+        <item>dan</item>
+        <item>leto</item>
+        <item>čas</item>
+        <item>človek</item>
+        <item>življenje</item>
+        <item>dom</item>
+        <item>delo</item>
+        <item>mesto</item>
+        <item>država</item>
+        <item>svet</item>
+        <item>vprašanje</item>
+        <item>odgovor</item>
+        <item>hvala</item>
+        <item>živjo</item>
+        <item>dober</item>
+        <item>danes</item>
+        <item>jutri</item>
+        <item>včeraj</item>
+        <item>iskanje</item>
+        <item>video</item>
+        <item>glasba</item>
+        <item>film</item>
+        <item>serija</item>
+        <item>epizoda</item>
+        <item>sezona</item>
+        <item>kanal</item>
+        <item>novice</item>
+        <item>brezplačno</item>
+        <item>slovenski</item>
+        <item>nov</item>
+        <item>velik</item>
+        <item>majhen</item>
+    </string-array>
+</resources>

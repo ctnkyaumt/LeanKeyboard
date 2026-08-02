@@ -7,6 +7,7 @@ import android.inputmethodservice.InputMethodService;
 import android.os.Build.VERSION;
 import android.os.Handler;
 import android.os.Message;
+import android.text.TextUtils;
 import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.InputDevice;
@@ -15,6 +16,7 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.inputmethod.CompletionInfo;
 import android.view.inputmethod.EditorInfo;
+import android.view.inputmethod.ExtractedText;
 import android.view.inputmethod.InputConnection;
 import androidx.core.text.BidiFormatter;
 import com.liskovsoft.leankeyboard.ime.LeanbackKeyboardController.InputListener;
@@ -30,6 +32,13 @@ public class LeanbackImeService extends KeyMapperImeService {
     static final int MODE_TRACKPAD_NAVIGATION = 0;
     private static final int MSG_SUGGESTIONS_CLEAR = 123;
     private static final int SUGGESTIONS_CLEAR_DELAY = 1000;
+    /** How many chars around the caret are inspected to detect rtl text */
+    private static final int RTL_PROBE_LEN = 64;
+    /** How much text before the caret feeds the next word predictor */
+    private static final int PREDICTION_CONTEXT_LEN = 64;
+    /** How much text is learned at once when the user submits a field */
+    private static final int LEARN_CONTEXT_LEN = 512;
+    private static final int MAX_PREDICTIONS = 5;
     private boolean mEnterSpaceBeforeCommitting;
     private View mInputView;
     private LeanbackKeyboardController mKeyboardController;
@@ -37,13 +46,17 @@ public class LeanbackImeService extends KeyMapperImeService {
     private LeanbackSuggestionsFactory mSuggestionsFactory;
     public static final String COMMAND_RESTART = "restart";
     private boolean mForceShowKbd;
+    private NextWordPredictor mPredictor;
+    private boolean mNextWordEnabled;
+    /** Index of the first predicted word in the suggestions strip */
+    private int mPredictionStartIndex = Integer.MAX_VALUE;
 
     @SuppressLint("HandlerLeak")
     private final Handler mHandler = new Handler() {
         public void handleMessage(Message msg) {
             if (msg.what == MSG_SUGGESTIONS_CLEAR && mShouldClearSuggestions) {
                 mSuggestionsFactory.clearSuggestions();
-                mKeyboardController.updateSuggestions(mSuggestionsFactory.getSuggestions());
+                refreshSuggestions();
                 mShouldClearSuggestions = false;
             }
 
@@ -85,6 +98,11 @@ public class LeanbackImeService extends KeyMapperImeService {
     private void initSettings() {
         LeanKeyPreferences prefs = LeanKeyPreferences.instance(this);
         mForceShowKbd = prefs.getForceShowKeyboard();
+        mNextWordEnabled = prefs.getNextWordSuggestionsEnabled();
+
+        if (!mNextWordEnabled && mSuggestionsFactory != null) {
+            mSuggestionsFactory.clearPredictions();
+        }
 
         if (mKeyboardController != null) {
             mKeyboardController.setSuggestionsEnabled(prefs.getSuggestionsEnabled());
@@ -120,6 +138,9 @@ public class LeanbackImeService extends KeyMapperImeService {
                     if (keyCode == LeanbackKeyboardView.ASCII_PERIOD) {
                         mEnterSpaceBeforeCommitting = true;
                     }
+                    if (isWordSeparator(text)) {
+                        learn(false);
+                    }
                     break;
                 case InputListener.ENTRY_TYPE_BACKSPACE:
                     clearSuggestionsDelayed();
@@ -128,6 +149,13 @@ public class LeanbackImeService extends KeyMapperImeService {
                     updateSuggestions = true;
                     break;
                 case InputListener.ENTRY_TYPE_SUGGESTION:
+                    // a predicted word replaces the word being typed, it doesn't submit the field
+                    if (isPrediction(keyCode)) {
+                        clearSuggestionsDelayed();
+                        commitPrediction(connection, text);
+                        updateSuggestions = true;
+                        break;
+                    }
                 case InputListener.ENTRY_TYPE_VOICE:
                     clearSuggestionsDelayed();
                     if (!mSuggestionsFactory.shouldSuggestionsAmend()) {
@@ -141,6 +169,7 @@ public class LeanbackImeService extends KeyMapperImeService {
                     connection.commitText(text, 1);
                     mEnterSpaceBeforeCommitting = true;
                 case InputListener.ENTRY_TYPE_ACTION:  // User presses Go, Send, Search etc
+                    learn(true); // remember what was submitted, it's likely to be typed again
                     boolean result = sendDefaultEditorAction(true);
 
                     if (result) {
@@ -229,8 +258,8 @@ public class LeanbackImeService extends KeyMapperImeService {
                     updateSuggestions = true;
             }
 
-            if (mKeyboardController.areSuggestionsEnabled() && updateSuggestions) {
-                mKeyboardController.updateSuggestions(mSuggestionsFactory.getSuggestions());
+            if (updateSuggestions) {
+                refreshSuggestions();
             }
         }
     }
@@ -243,13 +272,142 @@ public class LeanbackImeService extends KeyMapperImeService {
         return mInputView;
     }
 
+    /**
+     * Push the current suggestions (regular ones plus predicted words) to the keyboard
+     */
+    private void refreshSuggestions() {
+        if (!mKeyboardController.areSuggestionsEnabled()) {
+            return;
+        }
+
+        updatePredictions();
+        mPredictionStartIndex = mNextWordEnabled ? mSuggestionsFactory.getPredictionStartIndex() : Integer.MAX_VALUE;
+        mKeyboardController.updateSuggestions(mSuggestionsFactory.getSuggestions());
+    }
+
+    private void updatePredictions() {
+        if (!mNextWordEnabled) {
+            mSuggestionsFactory.clearPredictions();
+            return;
+        }
+
+        InputConnection connection = getCurrentInputConnection();
+        CharSequence before = connection == null ? null : connection.getTextBeforeCursor(PREDICTION_CONTEXT_LEN, 0);
+
+        mSuggestionsFactory.setPredictions(mPredictor.getSuggestions(before, MAX_PREDICTIONS));
+    }
+
+    /**
+     * Feed the predictor with what the user typed
+     * @param wholeField learn the whole field content instead of just the last word
+     */
+    private void learn(boolean wholeField) {
+        if (!mNextWordEnabled) {
+            return;
+        }
+
+        InputConnection connection = getCurrentInputConnection();
+
+        if (connection == null) {
+            return;
+        }
+
+        if (wholeField) {
+            // bounded window, learning a whole document would be slow and add mostly noise
+            mPredictor.learn(connection.getTextBeforeCursor(LEARN_CONTEXT_LEN, 0));
+        } else {
+            mPredictor.learnLastWord(connection.getTextBeforeCursor(PREDICTION_CONTEXT_LEN, 0));
+        }
+    }
+
+    private static boolean isWordSeparator(CharSequence text) {
+        if (TextUtils.isEmpty(text)) {
+            return false;
+        }
+
+        char last = text.charAt(text.length() - 1);
+
+        return !Character.isLetterOrDigit(last) && last != '\'' && last != '-';
+    }
+
+    private boolean isPrediction(int suggestionIndex) {
+        return mNextWordEnabled && suggestionIndex >= mPredictionStartIndex;
+    }
+
+    /**
+     * Replace the word being typed with the picked prediction and append a space.
+     */
+    private void commitPrediction(InputConnection connection, CharSequence word) {
+        if (TextUtils.isEmpty(word)) {
+            return;
+        }
+
+        CharSequence before = connection.getTextBeforeCursor(PREDICTION_CONTEXT_LEN, 0);
+        String current = NextWordPredictor.getCurrentWord(before);
+
+        if (!current.isEmpty()) {
+            connection.deleteSurroundingText(current.length(), 0);
+        }
+
+        connection.commitText(word + " ", 1);
+        mEnterSpaceBeforeCommitting = false;
+    }
+
+    /**
+     * Move the caret one char left/right using absolute offsets reported by the editor.<br/>
+     * The old implementation derived the caret from {@code getTextBeforeCursor(1000)} which pinned
+     * the caret around char #1000 in longer texts.
+     * @return whether the move was performed (false means the editor doesn't support extraction)
+     */
+    private boolean moveCursor(InputConnection connection, boolean left) {
+        ExtractedText extracted = LeanbackUtils.getExtractedText(connection);
+
+        if (extracted == null || extracted.text == null || extracted.selectionStart < 0 || extracted.selectionEnd < 0) {
+            return false;
+        }
+
+        CharSequence text = extracted.text;
+        int len = text.length();
+        int selStart = Math.min(extracted.selectionStart, extracted.selectionEnd);
+        int selEnd = Math.max(extracted.selectionStart, extracted.selectionEnd);
+
+        // in rtl text the visually left key means "logically forward"
+        boolean backward = left != isRtlAround(text, selStart);
+
+        int pos;
+        if (selStart != selEnd) {
+            pos = backward ? selStart : selEnd; // collapse the selection to one of its edges
+        } else {
+            pos = backward ? selStart - 1 : selStart + 1;
+
+            // don't land in the middle of a surrogate pair
+            if (pos > 0 && pos < len && Character.isLowSurrogate(text.charAt(pos))) {
+                pos += backward ? -1 : 1;
+            }
+        }
+
+        pos = Math.max(0, Math.min(pos, len));
+
+        int absolute = extracted.startOffset + pos;
+        connection.setSelection(absolute, absolute);
+
+        return true;
+    }
+
+    private static boolean isRtlAround(CharSequence text, int pos) {
+        int from = Math.max(0, pos - RTL_PROBE_LEN);
+        int to = Math.min(text.length(), pos + RTL_PROBE_LEN);
+
+        return from < to && BidiFormatter.getInstance().isRtl(text.subSequence(from, to));
+    }
+
     @Override
     public void onDisplayCompletions(CompletionInfo[] infos) {
         if (mKeyboardController.areSuggestionsEnabled()) {
             mShouldClearSuggestions = false;
-            mHandler.removeMessages(123);
+            mHandler.removeMessages(MSG_SUGGESTIONS_CLEAR);
             mSuggestionsFactory.onDisplayCompletions(infos);
-            mKeyboardController.updateSuggestions(this.mSuggestionsFactory.getSuggestions());
+            refreshSuggestions();
         }
 
     }
@@ -282,6 +440,9 @@ public class LeanbackImeService extends KeyMapperImeService {
         super.onFinishInputView(finishingInput);
         sendBroadcast(new Intent(IME_CLOSE));
         mSuggestionsFactory.clearSuggestions();
+        mSuggestionsFactory.clearPredictions();
+        mPredictor.save();
+        mKeyboardController.releaseVoiceResources();
 
         // NOTE: Trying to fix kbd without UI bug (telegram)
         reInitKeyboard();
@@ -306,6 +467,7 @@ public class LeanbackImeService extends KeyMapperImeService {
         mKeyboardController.setHideWhenPhysicalKeyboardUsed(!mForceShowKbd);
         mEnterSpaceBeforeCommitting = false;
         mSuggestionsFactory = new LeanbackSuggestionsFactory(this, MAX_SUGGESTIONS);
+        mPredictor = new NextWordPredictor(this);
     }
 
     @Override
@@ -382,7 +544,7 @@ public class LeanbackImeService extends KeyMapperImeService {
         sendBroadcast(new Intent(IME_OPEN));
         if (mKeyboardController.areSuggestionsEnabled()) {
             mSuggestionsFactory.createSuggestions();
-            mKeyboardController.updateSuggestions(mSuggestionsFactory.getSuggestions());
+            refreshSuggestions();
 
             // NOTE: FileManager+ rename item fix: https://t.me/LeanKeyboard/931
             // NOTE: Code below deletes text that has selection.

@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+    Seed vocabulary for the next word predictor. Only used to complete a word that is
+    already being typed, the actual predictions come from what the user types.
+    -->
+    <string-array name="common_words" translatable="false">
+        <item>และ</item>
+        <item>ที่</item>
+        <item>ของ</item>
+        <item>ใน</item>
+        <item>การ</item>
+        <item>เป็น</item>
+        <item>มี</item>
+        <item>ไม่</item>
+        <item>ให้</item>
+        <item>ได้</item>
+        <item>กับ</item>
+        <item>ว่า</item>
+        <item>จะ</item>
+        <item>ความ</item>
+        <item>ก็</item>
+        <item>มา</item>
+        <item>นี้</item>
+        <item>จาก</item>
+        <item>ไป</item>
+        <item>แต่</item>
+        <item>หรือ</item>
+        <item>ถ้า</item>
+        <item>เมื่อ</item>
+        <item>ที่ไหน</item>
+        <item>ใคร</item>
+        <item>มาก</item>
+        <item>ทั้งหมด</item>
+        <item>ทุก</item>
+        <item>นี่</item>
+        <item>นั้น</item>
+        <item>ฉัน</item>
+        <item>คุณ</item>
+        <item>เรา</item>
+        <item>เขา</item>
+        <item>วัน</item>
+        <item>ปี</item>
+        <item>เวลา</item>
+        <item>คน</item>
+        <item>ชีวิต</item>
+        <item>บ้าน</item>
+        <item>งาน</item>
+        <item>เมือง</item>
+        <item>ประเทศ</item>
+        <item>โลก</item>
+        <item>คำถาม</item>
+        <item>คำตอบ</item>
+        <item>ขอบคุณ</item>
+        <item>สวัสดี</item>
+        <item>วันนี้</item>
+        <item>พรุ่งนี้</item>
+        <item>เมื่อวาน</item>
+        <item>ค้นหา</item>
+        <item>วิดีโอ</item>
+        <item>เพลง</item>
+        <item>หนัง</item>
+        <item>ซีรีส์</item>
+        <item>ตอน</item>
+        <item>ซีซั่น</item>
+        <item>ช่อง</item>
+        <item>ข่าว</item>
+        <item>ฟรี</item>
+        <item>ไทย</item>
+        <item>ใหม่</item>
+        <item>ใหญ่</item>
+        <item>เล็ก</item>
+    </string-array>
+</resources>

@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+    Seed vocabulary for the next word predictor. Only used to complete a word that is
+    already being typed, the actual predictions come from what the user types.
+    -->
+    <string-array name="common_words" translatable="false">
+        <item>og</item>
+        <item>að</item>
+        <item>er</item>
+        <item>í</item>
+        <item>á</item>
+        <item>til</item>
+        <item>það</item>
+        <item>sem</item>
+        <item>með</item>
+        <item>um</item>
+        <item>en</item>
+        <item>fyrir</item>
+        <item>ekki</item>
+        <item>hafa</item>
+        <item>vera</item>
+        <item>af</item>
+        <item>eða</item>
+        <item>þegar</item>
+        <item>hvar</item>
+        <item>hver</item>
+        <item>mjög</item>
+        <item>allt</item>
+        <item>þetta</item>
+        <item>þessi</item>
+        <item>ég</item>
+        <item>þú</item>
+        <item>við</item>
+        <item>þeir</item>
+        <item>hún</item>
+        <item>hann</item>
+        <item>dagur</item>
+        <item>ár</item>
+        <item>tími</item>
+        <item>maður</item>
+        <item>líf</item>
+        <item>hús</item>
+        <item>vinna</item>
+        <item>borg</item>
+        <item>land</item>
+        <item>heimur</item>
+        <item>spurning</item>
+        <item>svar</item>
+        <item>takk</item>
+        <item>halló</item>
+        <item>góðan</item>
+        <item>dag</item>
+        <item>morgun</item>
+        <item>gær</item>
+        <item>leit</item>
+        <item>myndband</item>
+        <item>tónlist</item>
+        <item>kvikmynd</item>
+        <item>þáttur</item>
+        <item>þáttaröð</item>
+        <item>rás</item>
+        <item>fréttir</item>
+        <item>ókeypis</item>
+        <item>íslenska</item>
+        <item>nýtt</item>
+        <item>stórt</item>
+        <item>lítið</item>
+        <item>gott</item>
+    </string-array>
+</resources>

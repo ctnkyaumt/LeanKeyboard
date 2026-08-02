@@ -9,6 +9,7 @@ import android.view.inputmethod.EditorInfo;
 import com.liskovsoft.leankeykeyboard.R;
 
 import java.util.ArrayList;
+import java.util.List;
 
 public class LeanbackSuggestionsFactory {
     private static final String TAG = "LbSuggestionsFactory";
@@ -20,6 +21,7 @@ public class LeanbackSuggestionsFactory {
     private int mMode;
     private int mNumSuggestions;
     private final ArrayList<String> mSuggestions = new ArrayList<>();
+    private final ArrayList<String> mPredictions = new ArrayList<>();
 
     public LeanbackSuggestionsFactory(InputMethodService context, int numSuggestions) {
         mContext = context;
@@ -29,6 +31,28 @@ public class LeanbackSuggestionsFactory {
     public void clearSuggestions() {
         mSuggestions.clear();
         mSuggestions.add(null); // make room for user input, see LeanbackKeyboardContainer.addUserInputToSuggestions
+    }
+
+    /**
+     * Words proposed by the next word predictor. They are appended after the regular suggestions.
+     */
+    public void setPredictions(List<String> predictions) {
+        mPredictions.clear();
+
+        if (predictions != null) {
+            mPredictions.addAll(predictions);
+        }
+    }
+
+    public void clearPredictions() {
+        mPredictions.clear();
+    }
+
+    /**
+     * Index of the first predicted word within {@link #getSuggestions()}
+     */
+    public int getPredictionStartIndex() {
+        return mSuggestions.size();
     }
 
     public void createSuggestions() {
@@ -46,7 +70,10 @@ public class LeanbackSuggestionsFactory {
     }
 
     public ArrayList<String> getSuggestions() {
-        return mSuggestions;
+        ArrayList<String> result = new ArrayList<>(mSuggestions);
+        result.addAll(mPredictions);
+
+        return result;
     }
 
     public void onDisplayCompletions(CompletionInfo[] infos) {

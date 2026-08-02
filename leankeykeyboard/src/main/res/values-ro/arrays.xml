@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+    Seed vocabulary for the next word predictor. Only used to complete a word that is
+    already being typed, the actual predictions come from what the user types.
+    -->
+    <string-array name="common_words" translatable="false">
+        <item>de</item>
+        <item>la</item>
+        <item>și</item>
+        <item>în</item>
+        <item>un</item>
+        <item>o</item>
+        <item>cu</item>
+        <item>pe</item>
+        <item>este</item>
+        <item>nu</item>
+        <item>care</item>
+        <item>se</item>
+        <item>pentru</item>
+        <item>din</item>
+        <item>ce</item>
+        <item>mai</item>
+        <item>are</item>
+        <item>dar</item>
+        <item>sau</item>
+        <item>dacă</item>
+        <item>când</item>
+        <item>unde</item>
+        <item>cine</item>
+        <item>foarte</item>
+        <item>mult</item>
+        <item>tot</item>
+        <item>toate</item>
+        <item>acest</item>
+        <item>acel</item>
+        <item>eu</item>
+        <item>tu</item>
+        <item>noi</item>
+        <item>voi</item>
+        <item>ei</item>
+        <item>ele</item>
+        <item>zi</item>
+        <item>an</item>
+        <item>timp</item>
+        <item>om</item>
+        <item>viață</item>
+        <item>casă</item>
+        <item>muncă</item>
+        <item>oraș</item>
+        <item>țară</item>
+        <item>lume</item>
+        <item>întrebare</item>
+        <item>răspuns</item>
+        <item>mulțumesc</item>
+        <item>salut</item>
+        <item>bună</item>
+        <item>azi</item>
+        <item>mâine</item>
+        <item>ieri</item>
+        <item>căutare</item>
+        <item>video</item>
+        <item>muzică</item>
+        <item>film</item>
+        <item>serial</item>
+        <item>episod</item>
+        <item>sezon</item>
+        <item>canal</item>
+        <item>știri</item>
+        <item>gratis</item>
+        <item>română</item>
+        <item>nou</item>
+        <item>mare</item>
+        <item>mic</item>
+        <item>bun</item>
+    </string-array>
+</resources>
