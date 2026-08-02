@@ -13,7 +13,6 @@ public class ResizeableLeanbackKeyboardView extends LeanbackKeyboardView {
     private final LeanKeyPreferences mPrefs;
     private final int mKeyTextSizeOrigin;
     private final int mModeChangeTextSizeOrigin;
-    private final float mSizeFactor = 1.3f;
     private int mKeyOriginWidth;
 
     public ResizeableLeanbackKeyboardView(Context context, AttributeSet attrs) {
@@ -25,11 +24,13 @@ public class ResizeableLeanbackKeyboardView extends LeanbackKeyboardView {
 
     @Override
     public void setKeyboard(Keyboard keyboard) {
-        if (mPrefs.getEnlargeKeyboard()) {
-            mKeyTextSize = (int) (mKeyTextSizeOrigin * mSizeFactor);
-            mModeChangeTextSize = (int) (mModeChangeTextSizeOrigin * mSizeFactor);
+        float sizeFactor = mPrefs.getKeyboardScale();
 
-            keyboard = updateKeyboard(keyboard);
+        if (sizeFactor != LeanKeyPreferences.DEFAULT_KEYBOARD_SCALE) {
+            mKeyTextSize = (int) (mKeyTextSizeOrigin * sizeFactor);
+            mModeChangeTextSize = (int) (mModeChangeTextSizeOrigin * sizeFactor);
+
+            keyboard = updateKeyboard(keyboard, sizeFactor);
         } else {
             mKeyTextSize = mKeyTextSizeOrigin;
             mModeChangeTextSize = mModeChangeTextSizeOrigin;
@@ -40,22 +41,22 @@ public class ResizeableLeanbackKeyboardView extends LeanbackKeyboardView {
         super.setKeyboard(keyboard);
     }
 
-    private Keyboard updateKeyboard(Keyboard keyboard) {
+    private Keyboard updateKeyboard(Keyboard keyboard, float sizeFactor) {
         List<Key> keys = keyboard.getKeys();
 
         if (isNotSizedYet(keys.get(0))) {
             for (Key key : keys) {
-                key.width *= mSizeFactor;
-                key.height *= mSizeFactor;
-                key.gap *= mSizeFactor;
-                key.x *= mSizeFactor;
-                key.y *= mSizeFactor;
+                key.width *= sizeFactor;
+                key.height *= sizeFactor;
+                key.gap *= sizeFactor;
+                key.x *= sizeFactor;
+                key.y *= sizeFactor;
             }
         }
 
         KeyboardWrapper wrapper = KeyboardWrapper.from(keyboard, getContext());
-        wrapper.setHeightFactor(mSizeFactor);
-        wrapper.setWidthFactor(mSizeFactor);
+        wrapper.setHeightFactor(sizeFactor);
+        wrapper.setWidthFactor(sizeFactor);
 
         return wrapper;
     }

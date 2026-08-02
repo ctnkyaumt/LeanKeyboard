@@ -71,8 +71,10 @@ public class LeanbackImeService extends KeyMapperImeService {
     }
 
     private void setupDensity() {
-        if (LeanKeyPreferences.instance(this).getEnlargeKeyboard()) {
-            DisplayMetrics metrics = LeanbackUtils.createMetricsFrom(this, 1.3f);
+        float scale = LeanKeyPreferences.instance(this).getKeyboardScale();
+
+        if (scale != LeanKeyPreferences.DEFAULT_KEYBOARD_SCALE) {
+            DisplayMetrics metrics = LeanbackUtils.createMetricsFrom(this, scale);
 
             if (metrics != null) {
                 getResources().getDisplayMetrics().setTo(metrics);

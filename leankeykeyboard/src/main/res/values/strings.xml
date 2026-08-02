@@ -60,5 +60,34 @@
     <string name="show_launcher_icon">Show icon</string>
     <string name="show_launcher_icon_desc">Show launcher icon</string>
     <string name="enable_cyclic_navigation">Сyclic navigation</string>
-    <string name="enable_cyclic_navigation_desc">Сyclic navigation through keyboard</string>
+    <string name="enable_cyclic_navigation_desc">Сyclic navigation through keyboard (up and down)</string>
+    <string name="kb_size">Size</string>
+    <string name="kb_size_desc">Keyboard Size</string>
+    <string name="change_size">Change Size</string>
+    <string name="enable_next_word">Next word suggestions</string>
+    <string name="enable_next_word_desc">Predict the next word while typing</string>
+    <string name="enable_voice_search">Voice search</string>
+    <string name="enable_voice_search_desc">Show a microphone above the keyboard</string>
+    <string name="keyboardview_keycode_copy">Copy</string>
+    <string name="keyboardview_keycode_cut">Cut</string>
+    <string name="keyboardview_keycode_select_all">Select all</string>
+    <string name="keyboardview_keycode_select_line">Select line</string>
+    <string name="keyboardview_keycode_back">Back</string>
+    <string name="msg_copied">Copied to clipboard</string>
+    <string name="msg_nothing_selected">Nothing selected</string>
+    <string name="voice_settings">Voice</string>
+    <string name="voice_settings_desc">Offline voice recognition</string>
+    <string name="voice_unsupported">Offline recognition is not supported on this device</string>
+    <string name="change_voice">Voice Input</string>
+    <string name="enable_offline_voice">Offline recognition</string>
+    <string name="enable_offline_voice_desc">Recognize speech on the device, no other app needed</string>
+    <string name="download_voice_model">Download model</string>
+    <string name="delete_voice_model">Delete model</string>
+    <string name="voice_model_item" translatable="false">%1$s (%2$d MB)</string>
+    <string name="voice_model_download_started">Downloading the voice model, about %1$d MB</string>
+    <string name="voice_model_downloading">Downloading the voice model: %1$d%%</string>
+    <string name="voice_model_ready">Voice model is ready</string>
+    <string name="voice_model_failed">Voice model download failed: %1$s</string>
+    <string name="voice_model_deleted">Voice model deleted</string>
+    <string name="voice_model_missing">No voice model to delete</string>
 </resources>

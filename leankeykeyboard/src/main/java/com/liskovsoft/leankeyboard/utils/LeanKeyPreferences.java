@@ -10,6 +10,10 @@ public final class LeanKeyPreferences {
     private static final String APP_KEYBOARD_INDEX = "appKeyboardIndex";
     private static final String FORCE_SHOW_KEYBOARD = "forceShowKeyboard";
     private static final String ENLARGE_KEYBOARD = "enlargeKeyboard";
+    private static final String KEYBOARD_SCALE = "keyboardScale";
+    /** Scale applied by the legacy "enlarge keyboard" switch */
+    public static final float LEGACY_ENLARGE_SCALE = 1.3f;
+    public static final float DEFAULT_KEYBOARD_SCALE = 1.0f;
     private static final String KEYBOARD_THEME = "keyboardTheme";
     public static final String THEME_DEFAULT = "Default";
     public static final String THEME_DARK = "Dark";
@@ -18,6 +22,13 @@ public final class LeanKeyPreferences {
     private static final String SUGGESTIONS_ENABLED = "suggestionsEnabled";
     private static final String CYCLIC_NAVIGATION_ENABLED = "cyclicNavigationEnabled";
     private static final String AUTODETECT_LAYOUT = "autodetectLayout";
+    private static final String NEXT_WORD_SUGGESTIONS_ENABLED = "nextWordSuggestionsEnabled";
+    private static final String VOICE_SEARCH_ENABLED = "voiceSearchEnabled";
+    private static final String WORD_HISTORY = "wordHistory";
+    private static final String WHISPER_ENABLED = "whisperEnabled";
+    private static final String WHISPER_MODEL = "whisperModel";
+    private static final String WHISPER_LANGUAGE = "whisperLanguage";
+    public static final String WHISPER_LANGUAGE_AUTO = "auto";
     private static LeanKeyPreferences sInstance;
     private final Context mContext;
     private SharedPreferences mPrefs;
@@ -73,15 +84,23 @@ public final class LeanKeyPreferences {
                 .apply();
     }
 
-    public boolean getEnlargeKeyboard() {
-        return mPrefs.getBoolean(ENLARGE_KEYBOARD, false);
+    /**
+     * Key size multiplier (1.0 == original size).<br/>
+     * Falls back to the legacy "enlarge keyboard" switch while it hasn't been migrated yet.
+     */
+    public float getKeyboardScale() {
+        float legacy = mPrefs.getBoolean(ENLARGE_KEYBOARD, false) ? LEGACY_ENLARGE_SCALE : DEFAULT_KEYBOARD_SCALE;
+
+        return mPrefs.getFloat(KEYBOARD_SCALE, legacy);
     }
 
-    public void setEnlargeKeyboard(boolean enlarge) {
+    public void setKeyboardScale(float scale) {
         mPrefs.edit()
-                .putBoolean(ENLARGE_KEYBOARD, enlarge)
+                .putFloat(KEYBOARD_SCALE, scale)
+                .remove(ENLARGE_KEYBOARD) // superseded by the scale value
                 .apply();
     }
+
 
     public void setCurrentTheme(String theme) {
         mPrefs.edit()
@@ -115,5 +134,71 @@ public final class LeanKeyPreferences {
 
     public boolean getAutodetectLayout() {
         return mPrefs.getBoolean(AUTODETECT_LAYOUT, false);
+    }
+
+    public void setNextWordSuggestionsEnabled(boolean enabled) {
+        mPrefs.edit()
+                .putBoolean(NEXT_WORD_SUGGESTIONS_ENABLED, enabled)
+                .apply();
+    }
+
+    public boolean getNextWordSuggestionsEnabled() {
+        return mPrefs.getBoolean(NEXT_WORD_SUGGESTIONS_ENABLED, true);
+    }
+
+    public void setVoiceSearchEnabled(boolean enabled) {
+        mPrefs.edit()
+                .putBoolean(VOICE_SEARCH_ENABLED, enabled)
+                .apply();
+    }
+
+    public boolean getVoiceSearchEnabled() {
+        return mPrefs.getBoolean(VOICE_SEARCH_ENABLED, true);
+    }
+
+    /**
+     * Serialized word statistics used by the next word predictor
+     */
+    public void setWordHistory(String history) {
+        mPrefs.edit()
+                .putString(WORD_HISTORY, history)
+                .apply();
+    }
+
+    public String getWordHistory() {
+        return mPrefs.getString(WORD_HISTORY, "");
+    }
+
+    /**
+     * Use the built in on device recognition instead of an external voice app
+     */
+    public void setWhisperEnabled(boolean enabled) {
+        mPrefs.edit()
+                .putBoolean(WHISPER_ENABLED, enabled)
+                .apply();
+    }
+
+    public boolean getWhisperEnabled() {
+        return mPrefs.getBoolean(WHISPER_ENABLED, true);
+    }
+
+    public void setWhisperModel(String modelId) {
+        mPrefs.edit()
+                .putString(WHISPER_MODEL, modelId)
+                .apply();
+    }
+
+    public String getWhisperModel() {
+        return mPrefs.getString(WHISPER_MODEL, "tiny-q5_1");
+    }
+
+    public void setWhisperLanguage(String language) {
+        mPrefs.edit()
+                .putString(WHISPER_LANGUAGE, language)
+                .apply();
+    }
+
+    public String getWhisperLanguage() {
+        return mPrefs.getString(WHISPER_LANGUAGE, WHISPER_LANGUAGE_AUTO);
     }
 }

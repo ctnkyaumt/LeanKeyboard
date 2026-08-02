@@ -219,10 +219,12 @@ public class LeanbackKeyboardView extends FrameLayout {
                 iconHeight = newSize;
             }
 
-            if (key.codes[0] == ASCII_SPACE && LeanKeyPreferences.instance(getContext()).getEnlargeKeyboard()) {
-                // space fix for large interface
+            float scale = LeanKeyPreferences.instance(getContext()).getKeyboardScale();
+
+            if (key.codes[0] == ASCII_SPACE && scale != LeanKeyPreferences.DEFAULT_KEYBOARD_SCALE) {
+                // space fix for scaled interface
                 float gap = getResources().getDimension(R.dimen.keyboard_horizontal_gap);
-                float gapDelta = (gap * 1.3f) - gap;
+                float gapDelta = (gap * scale) - gap;
                 iconWidth -= gapDelta * (ASCII_PERIOD_LEN - 1);
             }
 
