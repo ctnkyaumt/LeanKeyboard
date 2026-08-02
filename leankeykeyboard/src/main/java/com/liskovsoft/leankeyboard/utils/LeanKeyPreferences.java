@@ -20,7 +20,6 @@ public final class LeanKeyPreferences {
     public static final String THEME_DARK2 = "Dark2";
     public static final String THEME_DARK3 = "Dark3";
     private static final String SUGGESTIONS_ENABLED = "suggestionsEnabled";
-    private static final String CYCLIC_NAVIGATION_ENABLED = "cyclicNavigationEnabled";
     private static final String AUTODETECT_LAYOUT = "autodetectLayout";
     private static final String NEXT_WORD_SUGGESTIONS_ENABLED = "nextWordSuggestionsEnabled";
     private static final String VOICE_SEARCH_ENABLED = "voiceSearchEnabled";
@@ -120,16 +119,6 @@ public final class LeanKeyPreferences {
 
     public boolean getSuggestionsEnabled() {
         return mPrefs.getBoolean(SUGGESTIONS_ENABLED, true);
-    }
-
-    public void setCyclicNavigationEnabled(boolean enabled) {
-        mPrefs.edit()
-                .putBoolean(CYCLIC_NAVIGATION_ENABLED, enabled)
-                .apply();
-    }
-
-    public boolean isCyclicNavigationEnabled() {
-        return mPrefs.getBoolean(CYCLIC_NAVIGATION_ENABLED, false);
     }
 
     public boolean getAutodetectLayout() {

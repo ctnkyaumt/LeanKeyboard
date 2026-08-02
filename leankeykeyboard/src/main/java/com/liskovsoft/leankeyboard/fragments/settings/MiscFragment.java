@@ -26,7 +26,6 @@ public class MiscFragment extends BaseSettingsFragment {
         addCheckedAction(R.string.enable_next_word, R.string.enable_next_word_desc, mPrefs::getNextWordSuggestionsEnabled, mPrefs::setNextWordSuggestionsEnabled);
         addCheckedAction(R.string.enable_voice_search, R.string.enable_voice_search_desc, mPrefs::getVoiceSearchEnabled, mPrefs::setVoiceSearchEnabled);
         addCheckedAction(R.string.show_launcher_icon, R.string.show_launcher_icon_desc, this::getLauncherIconShown, this::setLauncherIconShown);
-        addCheckedAction(R.string.enable_cyclic_navigation, R.string.enable_cyclic_navigation_desc, mPrefs::isCyclicNavigationEnabled, mPrefs::setCyclicNavigationEnabled);
     }
 
     @NonNull

@@ -802,8 +802,8 @@ public class LeanbackKeyboardContainer {
 
     /**
      * Wrap the focus around when the plain directional move produced no movement.<br/>
-     * Horizontal wrapping (leftmost key -> rightmost key of the same row and back) is always on.
-     * Vertical wrapping is opt-in, otherwise moving up out of the keyboard hides it.
+     * Both axes wrap: the leftmost key continues on the rightmost one of the same row, and the
+     * top row continues on the bottom one. Back still closes the keyboard.
      */
     public void updateCyclicFocus(int dir, KeyFocus oldFocus, KeyFocus newFocus) {
         boolean noMove = oldFocus.equals(newFocus);
@@ -811,46 +811,98 @@ public class LeanbackKeyboardContainer {
         boolean stuckOnSubmit = LeanbackUtils.isSubmitButton(oldFocus) && dir == DIRECTION_RIGHT;
         boolean horizontal = dir == DIRECTION_LEFT || dir == DIRECTION_RIGHT;
 
-        if (horizontal && (noMove || stuckOnSubmit)) {
-            wrapHorizontally(dir, oldFocus, newFocus);
+        if (horizontal) {
+            if (noMove || stuckOnSubmit) {
+                wrapHorizontally(dir, oldFocus, newFocus);
+            }
+
             return;
         }
 
         if (noMove || LeanbackUtils.isSubmitButton(newFocus)) {
-            if (LeanKeyPreferences.instance(mContext).isCyclicNavigationEnabled()) {
-                if (dir == DIRECTION_DOWN || dir == DIRECTION_UP) {
-                    if (!LeanbackUtils.isSubmitButton(oldFocus)) {
-                        offsetRect(mRect, mMainKeyboardView);
-                        float y = dir == DIRECTION_DOWN ? 0 : mRect.bottom; // 0 - topmost position, bottom - downmost
-                        int delta = (oldFocus.rect.right - oldFocus.rect.left) / 2; // fix space position
-                        int keyIdx = mMainKeyboardView.getNearestIndex(oldFocus.rect.left + delta - mRect.left, y);
-                        Key key = mMainKeyboardView.getKey(keyIdx);
-                        configureFocus(newFocus, mRect, keyIdx, key, 0);
-                    }
-                }
-            } else if (dir == DIRECTION_UP) {
-                // Hide the keyboard when moving focus out of the keyboard
-                mContext.hideIme();
+            wrapVertically(dir, oldFocus, newFocus);
+
+            Log.d(TAG, "Same key focus found! Direction: " + directionName(dir) + " Key Label: " + oldFocus.label);
+        }
+    }
+
+    /**
+     * Up from the topmost row continues on the bottom row and the other way round. The
+     * suggestions strip and the mic count as the row above the keyboard.
+     */
+    private void wrapVertically(int dir, KeyFocus oldFocus, KeyFocus newFocus) {
+        boolean up = dir == DIRECTION_UP;
+
+        // the strip is already the top row, so going up from it wraps to the bottom of the keyboard
+        if (LeanbackUtils.isSuggestionsButton(oldFocus) || oldFocus.type == KeyFocus.TYPE_VOICE) {
+            if (up) {
+                focusKeyboardRow(oldFocus, false, newFocus);
             }
 
-            String direction = "UNKNOWN";
+            return;
+        }
 
-            switch (dir) {
-                case LeanbackKeyboardContainer.DIRECTION_DOWN:
-                    direction = "DOWN";
-                    break;
-                case LeanbackKeyboardContainer.DIRECTION_LEFT:
-                    direction = "LEFT";
-                    break;
-                case LeanbackKeyboardContainer.DIRECTION_RIGHT:
-                    direction = "RIGHT";
-                    break;
-                case LeanbackKeyboardContainer.DIRECTION_UP:
-                    direction = "UP";
-                    break;
+        if (LeanbackUtils.isSubmitButton(oldFocus)) {
+            return;
+        }
+
+        // leaving the keys vertically lands on the strip, which is the row above the keyboard
+        if (focusStripAbove(oldFocus, newFocus)) {
+            return;
+        }
+
+        // no strip to land on, so wrap straight to the opposite row
+        focusKeyboardRow(oldFocus, up, newFocus);
+    }
+
+    /**
+     * Focus the topmost or bottommost keyboard row, keeping the current column.
+     * @param toTop whether the topmost row is wanted
+     */
+    private void focusKeyboardRow(KeyFocus oldFocus, boolean toTop, KeyFocus newFocus) {
+        offsetRect(mRect, mMainKeyboardView);
+        float y = toTop ? 0 : mRect.bottom;
+        int delta = (oldFocus.rect.right - oldFocus.rect.left) / 2; // fix space position
+        int keyIdx = mMainKeyboardView.getNearestIndex(oldFocus.rect.left + delta - mRect.left, y);
+        Key key = mMainKeyboardView.getKey(keyIdx);
+        configureFocus(newFocus, mRect, keyIdx, key, KeyFocus.TYPE_MAIN);
+    }
+
+    /**
+     * Focus whichever item of the suggestions row sits above the given key.
+     * @return whether the row exists and could be focused
+     */
+    private boolean focusStripAbove(KeyFocus oldFocus, KeyFocus newFocus) {
+        if (!mSuggestionsEnabled) {
+            return false;
+        }
+
+        int count = mSuggestions.getChildCount();
+
+        for (int i = 0; i < count; i++) {
+            View suggestion = mSuggestions.getChildAt(i);
+            offsetRect(mRect, suggestion);
+
+            if (oldFocus.rect.centerX() < mRect.right || i + 1 == count) {
+                return focusSuggestion(i, newFocus);
             }
+        }
 
-            Log.d(TAG, "Same key focus found! Direction: " + direction + " Key Label: " + oldFocus.label);
+        return focusMic(newFocus);
+    }
+
+    private static String directionName(int dir) {
+        switch (dir) {
+            case DIRECTION_DOWN:
+                return "DOWN";
+            case DIRECTION_LEFT:
+                return "LEFT";
+            case DIRECTION_RIGHT:
+                return "RIGHT";
+            case DIRECTION_UP:
+                return "UP";
+            default:
+                return "UNKNOWN";
         }
     }
 
