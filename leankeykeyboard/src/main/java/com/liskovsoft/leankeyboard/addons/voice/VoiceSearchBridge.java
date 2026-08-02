@@ -14,6 +14,7 @@ class VoiceSearchBridge implements SearchCallback {
         mActivity = activity;
         mCallback = callback;
         mDialogs = new ArrayList<>();
+        mDialogs.add(new FutoVoiceDialog(activity, this)); // preferred: on device recognition
         mDialogs.add(new SystemVoiceDialog(activity, this));
         mDialogs.add(new VoiceOverlayDialog(activity, this));
     }

@@ -23,3 +23,6 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+# The jni symbols in whisper_jni.cpp are bound by name, obfuscating the class breaks them
+-keep class com.liskovsoft.leankeyboard.addons.voice.whisper.WhisperLib { *; }

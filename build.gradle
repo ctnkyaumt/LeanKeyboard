@@ -25,6 +25,8 @@ buildscript {
         // https://support.google.com/googleplay/android-developer/answer/11926878
         compileSdkVersion = 35
         buildToolsVersion = "35.0.0"
+        // Needed by the bundled whisper.cpp build
+        ndkVersion = "27.0.12077973"
         minSdkVersion = 14
         targetSdkVersion = 35
         espressoCoreVersion = 'com.android.support.test.espresso:espresso-core:2.2.2'

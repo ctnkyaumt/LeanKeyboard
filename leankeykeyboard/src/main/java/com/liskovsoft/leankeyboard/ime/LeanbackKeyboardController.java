@@ -862,6 +862,12 @@ public class LeanbackKeyboardController implements LeanbackKeyboardContainer.Voi
         mContainer.initKeyboards();
     }
 
+    public void releaseVoiceResources() {
+        if (mContainer != null) {
+            mContainer.releaseVoiceResources();
+        }
+    }
+
     public void updateSuggestions(ArrayList<String> suggestions) {
         if (mContainer != null) {
             mContainer.updateSuggestions(suggestions);

@@ -42,7 +42,10 @@ import android.widget.RelativeLayout.LayoutParams;
 import androidx.core.content.ContextCompat;
 import com.liskovsoft.leankeyboard.addons.keyboards.KeyboardManager.KeyboardData;
 import com.liskovsoft.leankeyboard.addons.theme.ThemeManager;
+import com.liskovsoft.leankeyboard.addons.voice.FutoVoiceDialog;
 import com.liskovsoft.leankeyboard.addons.voice.RecognizerIntentWrapper;
+import com.liskovsoft.leankeyboard.addons.voice.whisper.WhisperModel;
+import com.liskovsoft.leankeyboard.addons.voice.whisper.WhisperRecognizer;
 import com.liskovsoft.leankeyboard.helpers.PermissionHelpers;
 import com.liskovsoft.leankeyboard.activity.PermissionsActivity;
 import com.liskovsoft.leankeyboard.ime.LeanbackKeyboardController.InputListener;
@@ -81,6 +84,8 @@ public class LeanbackKeyboardContainer {
     public static final int DIRECTION_DOWN = 2;
     public static final int DIRECTION_LEFT = 1;
     public static final int DIRECTION_RIGHT = 4;
+    /** Vertical distance below which two views are considered to be on the same row */
+    private static final int SAME_ROW_TOLERANCE_PX = 20;
     private Keyboard mAbcKeyboard;
     private Button mActionButtonView;
     private final float mAlphaIn;
@@ -111,6 +116,8 @@ public class LeanbackKeyboardContainer {
     private Rect mRect = new Rect();
     private RelativeLayout mRootView;
     private View mSelector;
+    private ImageView mMicButton;
+    private boolean mVoiceSearchEnabled;
     private ImageView mKeySelector;
     private Drawable mKeySelectorSquare;
     private Drawable mKeySelectorStretched;
@@ -120,6 +127,7 @@ public class LeanbackKeyboardContainer {
     private SpeechLevelSource mSpeechLevelSource;
     private SpeechRecognizer mSpeechRecognizer;
     private RecognizerIntentWrapper mRecognizerIntentWrapper;
+    private WhisperRecognizer mWhisperRecognizer;
     private LinearLayout mSuggestions;
     private View mSuggestionsBg;
     private HorizontalScrollView mSuggestionsContainer;
@@ -200,6 +208,7 @@ public class LeanbackKeyboardContainer {
         mVoiceButtonView = (RecognizerView) mRootView.findViewById(R.id.voice);
         mActionButtonView = (Button) mRootView.findViewById(R.id.enter);
         mSelector = mRootView.findViewById(R.id.selector);
+        mMicButton = mRootView.findViewById(R.id.mic_button);
         mKeySelector = mRootView.findViewById(R.id.key_selector);
         mKeySelectorSquare = ContextCompat.getDrawable(mContext, R.drawable.key_selector_square);
         mKeySelectorStretched = ContextCompat.getDrawable(mContext, R.drawable.key_selector);
@@ -489,6 +498,7 @@ public class LeanbackKeyboardContainer {
                     break;
                 case KeyFocus.TYPE_VOICE:
                     mVoiceButtonView.setMicFocused(true);
+                    LeanbackUtils.sendAccessibilityEvent(mMicButton, true);
                     dismissMiniKeyboard();
                     break;
                 case KeyFocus.TYPE_ACTION:
@@ -533,6 +543,17 @@ public class LeanbackKeyboardContainer {
      * @param context context
      */
     private void startRecognition(Context context) {
+        // Built in on device recognition, no companion app involved
+        if (startWhisperRecognition(context)) {
+            return;
+        }
+
+        // FUTO Voice Input runs on device and asks for the mic permission on its own
+        if (FutoVoiceDialog.isInstalled(context)) {
+            startExternalRecognition();
+            return;
+        }
+
         // MANAGE_EXTERNAL_STORAGE does not work on Android 14
         if ((PermissionHelpers.hasStoragePermissions(context) || VERSION.SDK_INT >= 34) &&
             PermissionHelpers.hasMicPermissions(context)) {
@@ -544,8 +565,7 @@ public class LeanbackKeyboardContainer {
 
                 mSpeechRecognizer.startListening(mRecognizerIntent);
             } else {
-                mRecognizerIntentWrapper.setListener(searchText -> mVoiceListener.onVoiceResult(searchText));
-                mRecognizerIntentWrapper.startListening();
+                startExternalRecognition();
 
                 //String noRecognition = "Seems that the voice recognition is not enabled on your device";
                 //
@@ -556,6 +576,84 @@ public class LeanbackKeyboardContainer {
         } else {
             Helpers.startActivity(context, PermissionsActivity.class);
         }
+    }
+
+    /**
+     * Record and transcribe with the bundled whisper engine.
+     * @return whether the built in engine took over
+     */
+    private boolean startWhisperRecognition(Context context) {
+        LeanKeyPreferences prefs = LeanKeyPreferences.instance(context);
+
+        if (!prefs.getWhisperEnabled()) {
+            return false;
+        }
+
+        WhisperModel model = WhisperModel.fromId(prefs.getWhisperModel());
+
+        if (mWhisperRecognizer == null) {
+            mWhisperRecognizer = new WhisperRecognizer(context);
+        }
+
+        // fall back to the other backends while the model hasn't been downloaded yet
+        if (!mWhisperRecognizer.isReady(model) || mWhisperRecognizer.isBusy()) {
+            return false;
+        }
+
+        if (!PermissionHelpers.hasMicPermissions(context)) {
+            Helpers.startActivity(context, PermissionsActivity.class);
+            return true;
+        }
+
+        mWhisperRecognizer.start(model, prefs.getWhisperLanguage(), new WhisperRecognizer.Listener() {
+            @Override
+            public void onReadyForSpeech() {
+                mVoiceButtonView.showListening();
+            }
+
+            @Override
+            public void onLevel(int level) {
+                mSpeechLevelSource.setSpeechLevel(level);
+            }
+
+            @Override
+            public void onRecognizing() {
+                mVoiceButtonView.showRecognizing();
+            }
+
+            @Override
+            public void onResult(String text) {
+                cancelVoiceRecording();
+
+                if (mVoiceListener != null && !TextUtils.isEmpty(text)) {
+                    mVoiceListener.onVoiceResult(text);
+                }
+            }
+
+            @Override
+            public void onError(String message) {
+                cancelVoiceRecording();
+                MessageHelpers.showMessage(mContext, message);
+                Log.e(TAG, "whisper: " + message);
+            }
+        });
+
+        return true;
+    }
+
+    /**
+     * Hand the recognition over to another app (FUTO Voice Input or whatever handles
+     * RECOGNIZE_SPEECH) and restore the keyboard once it's done.
+     */
+    private void startExternalRecognition() {
+        mRecognizerIntentWrapper.setListener(searchText -> {
+            cancelVoiceRecording(); // our own recording overlay is not used in this flow
+
+            if (mVoiceListener != null) {
+                mVoiceListener.onVoiceResult(searchText);
+            }
+        });
+        mRecognizerIntentWrapper.startListening();
     }
 
     public void alignSelector(final float x, final float y, final boolean playAnimation) {
@@ -584,7 +682,21 @@ public class LeanbackKeyboardContainer {
     }
 
     public void cancelVoiceRecording() {
+        if (mWhisperRecognizer != null && mWhisperRecognizer.isBusy()) {
+            mWhisperRecognizer.cancel();
+        }
+
         mVoiceAnimator.startExitAnimation();
+    }
+
+    /**
+     * Drop the loaded voice model. It holds tens of megabytes of native memory.
+     */
+    public void releaseVoiceResources() {
+        if (mWhisperRecognizer != null) {
+            mWhisperRecognizer.cancel();
+            mWhisperRecognizer.release();
+        }
     }
 
     public void clearSuggestions() {
@@ -625,6 +737,14 @@ public class LeanbackKeyboardContainer {
         }
 
         int count = mSuggestions.getChildCount();
+        if (newY < (float) keyboardTop && isMicVisible()) {
+            offsetRect(mRect, mMicButton);
+            if (newX >= (float) mRect.left) {
+                configureFocus(focus, mRect, 0, KeyFocus.TYPE_VOICE);
+                return true;
+            }
+        }
+
         if (newY < (float) keyboardTop && count > 0 && mSuggestionsEnabled) {
             for (actionLeft = 0; actionLeft < count; ++actionLeft) {
                 View view = mSuggestions.getChildAt(actionLeft);
@@ -771,6 +891,25 @@ public class LeanbackKeyboardContainer {
                 getPhysicalPosition(centerX, centerDelta, mTempPoint);
                 return getBestFocus(centerX, centerDelta, nextFocus);
             case KeyFocus.TYPE_VOICE:
+                if ((direction & DIRECTION_DOWN) != 0) {
+                    offsetRect(mRect, mMainKeyboardView);
+                    return getBestFocus((float) mRect.right, (float) mRect.top, nextFocus);
+                }
+
+                if ((direction & DIRECTION_LEFT) != 0) {
+                    // the mic sits to the right of the suggestions strip
+                    if (mSuggestionsEnabled && focusSuggestion(mSuggestions.getChildCount() - 1, nextFocus)) {
+                        return true;
+                    }
+
+                    offsetRect(mRect, mMainKeyboardView);
+                    return getBestFocus((float) mRect.right, (float) mRect.top, nextFocus);
+                }
+
+                if ((direction & DIRECTION_UP) != 0 && mEscapeNorthEnabled) {
+                    escapeNorth();
+                }
+                break;
             default:
                 break;
             case KeyFocus.TYPE_ACTION:
@@ -815,6 +954,12 @@ public class LeanbackKeyboardContainer {
 
                         int suggestIdx = focusIdx + delta;
                         View suggestion = mSuggestions.getChildAt(suggestIdx);
+
+                        // the mic lives right after the last suggestion
+                        if (suggestion == null && right && focusMic(nextFocus)) {
+                            return true;
+                        }
+
                         if (suggestion != null) {
                             offsetRect(mRect, suggestion);
                             if (mRect.left < leftCalc && mRect.right > rightCalc) {
@@ -876,6 +1021,56 @@ public class LeanbackKeyboardContainer {
 
     public boolean isVoiceEnabled() {
         return mVoiceEnabled;
+    }
+
+    /**
+     * Gboard style mic above the keyboard. Only shown when the option is on and the current
+     * field accepts voice input.
+     */
+    private void updateMicButton() {
+        mVoiceSearchEnabled = LeanKeyPreferences.instance(mContext).getVoiceSearchEnabled();
+
+        if (mMicButton != null) {
+            mMicButton.setVisibility(isMicVisible() ? View.VISIBLE : View.GONE);
+        }
+    }
+
+    public boolean isMicVisible() {
+        return mVoiceSearchEnabled && mVoiceEnabled && mMicButton != null;
+    }
+
+    /**
+     * Move the focus onto the top mic
+     * @return whether the mic can be focused at all
+     */
+    private boolean focusMic(KeyFocus focus) {
+        if (!isMicVisible()) {
+            return false;
+        }
+
+        offsetRect(mRect, mMicButton);
+        configureFocus(focus, mRect, 0, KeyFocus.TYPE_VOICE);
+
+        return true;
+    }
+
+    /**
+     * Move the focus onto one of the suggestions
+     * @return whether the suggestion exists
+     */
+    private boolean focusSuggestion(int index, KeyFocus focus) {
+        View suggestion = index < 0 ? null : mSuggestions.getChildAt(index);
+
+        if (suggestion == null) {
+            return false;
+        }
+
+        offsetRect(mRect, suggestion);
+        suggestion.requestFocus();
+        LeanbackUtils.sendAccessibilityEvent(suggestion.findViewById(R.id.text), true);
+        configureFocus(focus, mRect, index, KeyFocus.TYPE_SUGGESTION);
+
+        return true;
     }
 
     public boolean isVoiceVisible() {
@@ -990,6 +1185,7 @@ public class LeanbackKeyboardContainer {
         }
 
         mKeyboardsContainer.setLayoutParams(params);
+        updateMicButton();
         mMainKeyboardView.setKeyboard(mInitialMainKeyboard);
         mVoiceButtonView.setMicEnabled(mVoiceEnabled);
         resetVoice();
@@ -1262,6 +1458,71 @@ public class LeanbackKeyboardContainer {
                 }
             }
         }
+
+        closeEditMenu();
+    }
+
+    /**
+     * Select the whole editor content
+     */
+    public void onSelectAllClick() {
+        InputConnection connection = mContext.getCurrentInputConnection();
+
+        if (connection != null) {
+            connection.performContextMenuAction(android.R.id.selectAll);
+        }
+
+        closeEditMenu();
+    }
+
+    /**
+     * Select the line (paragraph) the caret currently sits on
+     */
+    public void onSelectLineClick() {
+        InputConnection connection = mContext.getCurrentInputConnection();
+
+        if (connection != null) {
+            int[] bounds = LeanbackUtils.getCurrentLineBounds(connection);
+
+            if (bounds != null) {
+                connection.setSelection(bounds[0], bounds[1]);
+            }
+        }
+
+        closeEditMenu();
+    }
+
+    /**
+     * Put the selection into the clipboard
+     * @param cut whether the selection should also be removed
+     */
+    public void onCopyClick(boolean cut) {
+        InputConnection connection = mContext.getCurrentInputConnection();
+
+        if (connection != null) {
+            if (LeanbackUtils.hasSelection(connection)) {
+                connection.performContextMenuAction(cut ? android.R.id.cut : android.R.id.copy);
+                MessageHelpers.showMessage(mContext, mContext.getString(R.string.msg_copied));
+            } else {
+                MessageHelpers.showMessage(mContext, mContext.getString(R.string.msg_nothing_selected));
+            }
+        }
+
+        closeEditMenu();
+    }
+
+    /**
+     * Same as pressing the remote's back button: closes the keyboard
+     */
+    public void onBackClick() {
+        closeEditMenu();
+        mContext.hideIme();
+    }
+
+    private void closeEditMenu() {
+        if (dismissMiniKeyboard()) {
+            moveFocusToIndex(mMiniKbKeyIndex, KeyFocus.TYPE_MAIN);
+        }
     }
 
     public interface DismissListener {
@@ -1474,71 +1735,6 @@ public class LeanbackKeyboardContainer {
             if (isVoiceVisible() && !mValueAnimator.isRunning()) {
                 start(false);
             }
-        }
-
-        closeEditMenu();
-    }
-
-    /**
-     * Select the whole editor content
-     */
-    public void onSelectAllClick() {
-        InputConnection connection = mContext.getCurrentInputConnection();
-
-        if (connection != null) {
-            connection.performContextMenuAction(android.R.id.selectAll);
-        }
-
-        closeEditMenu();
-    }
-
-    /**
-     * Select the line (paragraph) the caret currently sits on
-     */
-    public void onSelectLineClick() {
-        InputConnection connection = mContext.getCurrentInputConnection();
-
-        if (connection != null) {
-            int[] bounds = LeanbackUtils.getCurrentLineBounds(connection);
-
-            if (bounds != null) {
-                connection.setSelection(bounds[0], bounds[1]);
-            }
-        }
-
-        closeEditMenu();
-    }
-
-    /**
-     * Put the selection into the clipboard
-     * @param cut whether the selection should also be removed
-     */
-    public void onCopyClick(boolean cut) {
-        InputConnection connection = mContext.getCurrentInputConnection();
-
-        if (connection != null) {
-            if (LeanbackUtils.hasSelection(connection)) {
-                connection.performContextMenuAction(cut ? android.R.id.cut : android.R.id.copy);
-                MessageHelpers.showMessage(mContext, mContext.getString(R.string.msg_copied));
-            } else {
-                MessageHelpers.showMessage(mContext, mContext.getString(R.string.msg_nothing_selected));
-            }
-        }
-
-        closeEditMenu();
-    }
-
-    /**
-     * Same as pressing the remote's back button: closes the keyboard
-     */
-    public void onBackClick() {
-        closeEditMenu();
-        mContext.hideIme();
-    }
-
-    private void closeEditMenu() {
-        if (dismissMiniKeyboard()) {
-            moveFocusToIndex(mMiniKbKeyIndex, KeyFocus.TYPE_MAIN);
         }
     }
 
