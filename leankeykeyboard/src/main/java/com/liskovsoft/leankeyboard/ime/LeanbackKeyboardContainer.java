@@ -800,26 +800,25 @@ public class LeanbackKeyboardContainer {
         return type == KeyFocus.TYPE_MAIN ? this.mMainKeyboardView.getKey(index) : null;
     }
 
+    /**
+     * Wrap the focus around when the plain directional move produced no movement.<br/>
+     * Horizontal wrapping (leftmost key -> rightmost key of the same row and back) is always on.
+     * Vertical wrapping is opt-in, otherwise moving up out of the keyboard hides it.
+     */
     public void updateCyclicFocus(int dir, KeyFocus oldFocus, KeyFocus newFocus) {
-        if (oldFocus.equals(newFocus) || LeanbackUtils.isSubmitButton(newFocus)) {
-            if (LeanKeyPreferences.instance(mContext).isCyclicNavigationEnabled()) {
-                if (dir == DIRECTION_RIGHT || dir == DIRECTION_LEFT) {
-                    Rect actionRect = new Rect();
-                    offsetRect(actionRect, mActionButtonView);
-                    boolean onSameRow = Math.abs(oldFocus.rect.top - actionRect.top) < 20;
+        boolean noMove = oldFocus.equals(newFocus);
+        // moving right off the submit button leaves the focus untouched, so it needs its own check
+        boolean stuckOnSubmit = LeanbackUtils.isSubmitButton(oldFocus) && dir == DIRECTION_RIGHT;
+        boolean horizontal = dir == DIRECTION_LEFT || dir == DIRECTION_RIGHT;
 
-                    if (onSameRow && !LeanbackUtils.isSubmitButton(oldFocus)) {
-                        // move focus to submit button
-                        offsetRect(mRect, mActionButtonView);
-                        configureFocus(newFocus, mRect, 0, KeyFocus.TYPE_ACTION);
-                    } else {
-                        offsetRect(mRect, mMainKeyboardView);
-                        float x = dir == DIRECTION_RIGHT ? 0 : mRect.right; // 0 - rightmost position, right - leftmost
-                        int keyIdx = mMainKeyboardView.getNearestIndex(x, oldFocus.rect.top - mRect.top);
-                        Key key = mMainKeyboardView.getKey(keyIdx);
-                        configureFocus(newFocus, mRect, keyIdx, key, 0);
-                    }
-                } else if (dir == DIRECTION_DOWN || dir == DIRECTION_UP) {
+        if (horizontal && (noMove || stuckOnSubmit)) {
+            wrapHorizontally(dir, oldFocus, newFocus);
+            return;
+        }
+
+        if (noMove || LeanbackUtils.isSubmitButton(newFocus)) {
+            if (LeanKeyPreferences.instance(mContext).isCyclicNavigationEnabled()) {
+                if (dir == DIRECTION_DOWN || dir == DIRECTION_UP) {
                     if (!LeanbackUtils.isSubmitButton(oldFocus)) {
                         offsetRect(mRect, mMainKeyboardView);
                         float y = dir == DIRECTION_DOWN ? 0 : mRect.bottom; // 0 - topmost position, bottom - downmost
@@ -853,6 +852,44 @@ public class LeanbackKeyboardContainer {
 
             Log.d(TAG, "Same key focus found! Direction: " + direction + " Key Label: " + oldFocus.label);
         }
+    }
+
+    /**
+     * Left from the leftmost key lands on the rightmost item of the same row and vice versa.<br/>
+     * The submit button counts as the rightmost item of the row it is aligned with.
+     */
+    private void wrapHorizontally(int dir, KeyFocus oldFocus, KeyFocus newFocus) {
+        // the suggestions strip and the mic form their own row, wrap inside it
+        if (LeanbackUtils.isSuggestionsButton(oldFocus) || oldFocus.type == KeyFocus.TYPE_VOICE) {
+            if (dir == DIRECTION_RIGHT) {
+                if (!focusSuggestion(0, newFocus)) {
+                    focusMic(newFocus);
+                }
+            } else if (!focusMic(newFocus)) {
+                focusSuggestion(mSuggestions.getChildCount() - 1, newFocus);
+            }
+
+            return;
+        }
+
+        Rect actionRect = new Rect();
+        offsetRect(actionRect, mActionButtonView);
+        boolean onSubmitRow = Math.abs(oldFocus.rect.top - actionRect.top) < SAME_ROW_TOLERANCE_PX;
+
+        // wrapping left from the row that holds the submit button ends up on that button
+        if (dir == DIRECTION_LEFT && onSubmitRow && !LeanbackUtils.isSubmitButton(oldFocus)) {
+            configureFocus(newFocus, actionRect, 0, KeyFocus.TYPE_ACTION);
+            return;
+        }
+
+        offsetRect(mRect, mMainKeyboardView);
+
+        // the submit button wraps to the leftmost key of its own row
+        int rowTop = LeanbackUtils.isSubmitButton(oldFocus) ? actionRect.top : oldFocus.rect.top;
+        float x = dir == DIRECTION_RIGHT ? 0 : mRect.right; // 0 - leftmost position, right - rightmost
+        int keyIdx = mMainKeyboardView.getNearestIndex(x, rowTop - mRect.top);
+        Key key = mMainKeyboardView.getKey(keyIdx);
+        configureFocus(newFocus, mRect, keyIdx, key, KeyFocus.TYPE_MAIN);
     }
 
     public boolean getNextFocusInDirection(int direction, KeyFocus startFocus, KeyFocus nextFocus) {
