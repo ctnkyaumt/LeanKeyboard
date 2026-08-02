@@ -19,12 +19,12 @@
 /** Set from java to interrupt a transcription that is taking too long */
 static std::atomic<bool> g_abort(false);
 
-static bool whisper_abort_callback(void *) {
+static bool on_abort(void *) {
     return g_abort.load();
 }
 
 /** Proves whether the encoder is advancing or wedged */
-static void whisper_progress_callback(struct whisper_context *, struct whisper_state *, int progress, void *) {
+static void on_progress(struct whisper_context *, struct whisper_state *, int progress, void *) {
     LOGI("transcribe progress %d%%", progress);
 }
 
@@ -98,9 +98,9 @@ JNI_METHOD(nativeTranscribe)(JNIEnv *env, jclass, jlong contextPtr, jfloatArray 
     }
 
     g_abort.store(false);
-    params.abort_callback = whisper_abort_callback;
+    params.abort_callback = on_abort;
     params.abort_callback_user_data = nullptr;
-    params.progress_callback = whisper_progress_callback;
+    params.progress_callback = on_progress;
     params.progress_callback_user_data = nullptr;
 
     LOGI("transcribe start: %d samples, %d threads, audio_ctx %d", sampleCount, threads, audioCtx);
