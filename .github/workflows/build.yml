@@ -1,0 +1,76 @@
+name: Build APK
+
+on:
+  push:
+    branches: [master]
+    tags: ['v*']
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # whisper.cpp lives in a submodule
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Install NDK
+        run: |
+          echo "y" | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            "ndk;27.0.12077973" "cmake;3.22.1"
+
+      - name: Build debug APK
+        run: ./gradlew :leankeykeyboard:assembleOriginDebug --stacktrace
+
+      - name: Collect APKs
+        id: collect
+        run: |
+          mkdir -p dist
+          find leankeykeyboard/build/outputs/apk -name '*.apk' -exec cp {} dist/ \;
+          ls -la dist
+          echo "name=$(ls dist | head -n1)" >> "$GITHUB_OUTPUT"
+
+      # NOTE: actions/upload-artifact always wraps its contents in a zip, there is no way
+      # around it. The release below is what gives a direct .apk download link.
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: leankeyboard-apk
+          path: dist/*.apk
+          if-no-files-found: error
+
+      - name: Publish rolling build
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: Latest build
+          body: |
+            Automatic build of `${{ github.sha }}`.
+            Download the `.apk` below and install it directly, no unzipping needed.
+          prerelease: true
+          files: dist/*.apk
+
+      - name: Publish tagged release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.apk
