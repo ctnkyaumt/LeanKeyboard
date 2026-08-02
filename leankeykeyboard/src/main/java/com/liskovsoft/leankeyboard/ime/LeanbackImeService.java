@@ -144,7 +144,11 @@ public class LeanbackImeService extends KeyMapperImeService {
                     break;
                 case InputListener.ENTRY_TYPE_BACKSPACE:
                     clearSuggestionsDelayed();
-                    connection.deleteSurroundingText(1, 0);
+                    if (LeanbackUtils.hasSelection(connection)) {
+                        connection.commitText("", 1); // wipe the selected text instead of a single char
+                    } else {
+                        connection.deleteSurroundingText(1, 0);
+                    }
                     mEnterSpaceBeforeCommitting = false;
                     updateSuggestions = true;
                     break;
@@ -182,9 +186,14 @@ public class LeanbackImeService extends KeyMapperImeService {
                     break;
                 case InputListener.ENTRY_TYPE_LEFT:
                 case InputListener.ENTRY_TYPE_RIGHT:
+                    if (moveCursor(connection, type == InputListener.ENTRY_TYPE_LEFT)) {
+                        updateSuggestions = true;
+                        break;
+                    }
+
                     BidiFormatter formatter = BidiFormatter.getInstance();
 
-                    CharSequence textBeforeCursor = connection.getTextBeforeCursor(1000, 0);
+                    CharSequence textBeforeCursor = connection.getTextBeforeCursor(LeanbackUtils.MAX_TEXT_LEN, 0);
                     int lenBefore = 0;
                     boolean isRtlBefore = false;
                     //int rtlLenBefore = 0;
@@ -194,7 +203,7 @@ public class LeanbackImeService extends KeyMapperImeService {
                         //rtlLenBefore = LeanbackUtils.getRtlLenBeforeCursor(textBeforeCursor);
                     }
 
-                    CharSequence textAfterCursor = connection.getTextAfterCursor(1000, 0);
+                    CharSequence textAfterCursor = connection.getTextAfterCursor(LeanbackUtils.MAX_TEXT_LEN, 0);
                     int lenAfter = 0;
                     //int rtlLenAfter = 0;
                     boolean isRtlAfter = false;
@@ -262,14 +271,6 @@ public class LeanbackImeService extends KeyMapperImeService {
                 refreshSuggestions();
             }
         }
-    }
-
-    @Override
-    public View onCreateInputView() {
-        mInputView = mKeyboardController.getView();
-        mInputView.requestFocus();
-
-        return mInputView;
     }
 
     /**
@@ -399,6 +400,14 @@ public class LeanbackImeService extends KeyMapperImeService {
         int to = Math.min(text.length(), pos + RTL_PROBE_LEN);
 
         return from < to && BidiFormatter.getInstance().isRtl(text.subSequence(from, to));
+    }
+
+    @Override
+    public View onCreateInputView() {
+        mInputView = mKeyboardController.getView();
+        mInputView.requestFocus();
+
+        return mInputView;
     }
 
     @Override
