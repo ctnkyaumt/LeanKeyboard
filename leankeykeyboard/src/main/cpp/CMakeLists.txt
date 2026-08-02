@@ -2,6 +2,12 @@ cmake_minimum_required(VERSION 3.22.1)
 
 project(leankey_whisper C CXX)
 
+# A debug apk builds its native code with CMAKE_BUILD_TYPE=Debug, which compiles ggml at -O0.
+# That makes transcription tens of times slower and looks exactly like a hang, so the engine is
+# always built optimized no matter which apk variant pulls it in.
+set(CMAKE_C_FLAGS_DEBUG   "-O3 -DNDEBUG" CACHE STRING "" FORCE)
+set(CMAKE_CXX_FLAGS_DEBUG "-O3 -DNDEBUG" CACHE STRING "" FORCE)
+
 # whisper.cpp / ggml build switches. Everything we don't need is turned off to keep
 # the native library small and the CI build short.
 set(BUILD_SHARED_LIBS       OFF CACHE BOOL "" FORCE)
