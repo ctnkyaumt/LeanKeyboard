@@ -87,6 +87,8 @@
     <string name="voice_model_download_started">Downloading the voice model, about %1$d MB</string>
     <string name="voice_model_downloading">Downloading the voice model: %1$d%%</string>
     <string name="voice_model_ready">Voice model is ready</string>
+    <string name="voice_model_ready_press_mic">Voice model is ready, press the microphone again</string>
+    <string name="voice_no_engine">No voice engine available. Enable offline recognition in Settings &gt; Voice Input.</string>
     <string name="voice_model_failed">Voice model download failed: %1$s</string>
     <string name="voice_model_deleted">Voice model deleted</string>
     <string name="voice_model_missing">No voice model to delete</string>

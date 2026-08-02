@@ -8,6 +8,7 @@ import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.ResolveInfo;
 import android.content.res.Resources;
 import android.graphics.PointF;
 import android.graphics.Rect;
@@ -16,7 +17,10 @@ import android.inputmethodservice.Keyboard;
 import android.inputmethodservice.Keyboard.Key;
 import android.os.Build.VERSION;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.speech.RecognitionListener;
+import android.speech.RecognitionService;
 import android.speech.RecognizerIntent;
 import android.speech.SpeechRecognizer;
 import android.text.InputType;
@@ -44,7 +48,9 @@ import com.liskovsoft.leankeyboard.addons.keyboards.KeyboardManager.KeyboardData
 import com.liskovsoft.leankeyboard.addons.theme.ThemeManager;
 import com.liskovsoft.leankeyboard.addons.voice.FutoVoiceDialog;
 import com.liskovsoft.leankeyboard.addons.voice.RecognizerIntentWrapper;
+import com.liskovsoft.leankeyboard.addons.voice.whisper.WhisperLib;
 import com.liskovsoft.leankeyboard.addons.voice.whisper.WhisperModel;
+import com.liskovsoft.leankeyboard.addons.voice.whisper.WhisperModelManager;
 import com.liskovsoft.leankeyboard.addons.voice.whisper.WhisperRecognizer;
 import com.liskovsoft.leankeyboard.helpers.PermissionHelpers;
 import com.liskovsoft.leankeyboard.activity.PermissionsActivity;
@@ -86,6 +92,8 @@ public class LeanbackKeyboardContainer {
     public static final int DIRECTION_RIGHT = 4;
     /** Vertical distance below which two views are considered to be on the same row */
     private static final int SAME_ROW_TOLERANCE_PX = 20;
+    /** How long the voice overlay may stay up without any backend reporting back */
+    private static final long VOICE_WATCHDOG_MS = 30_000L;
     private Keyboard mAbcKeyboard;
     private Button mActionButtonView;
     private final float mAlphaIn;
@@ -128,6 +136,13 @@ public class LeanbackKeyboardContainer {
     private SpeechRecognizer mSpeechRecognizer;
     private RecognizerIntentWrapper mRecognizerIntentWrapper;
     private WhisperRecognizer mWhisperRecognizer;
+    private final Handler mHandler = new Handler(Looper.getMainLooper());
+    private final Runnable mVoiceWatchdog = () -> {
+        if (isVoiceVisible()) {
+            Log.w(TAG, "voice backend never reported back, dropping the overlay");
+            cancelVoiceRecording();
+        }
+    };
     private LinearLayout mSuggestions;
     private View mSuggestionsBg;
     private HorizontalScrollView mSuggestionsContainer;
@@ -557,25 +572,48 @@ public class LeanbackKeyboardContainer {
         // MANAGE_EXTERNAL_STORAGE does not work on Android 14
         if ((PermissionHelpers.hasStoragePermissions(context) || VERSION.SDK_INT >= 34) &&
             PermissionHelpers.hasMicPermissions(context)) {
-            if (SpeechRecognizer.isRecognitionAvailable(context)) {
+            // isRecognitionAvailable() still reports true on boxes that have no service bound,
+            // where startListening() then fails without ever calling back
+            if (SpeechRecognizer.isRecognitionAvailable(context) && hasRecognitionService(context)) {
                 mRecognizerIntent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
                 mRecognizerIntent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
                 mRecognizerIntent.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true);
                 mSpeechRecognizer.setRecognitionListener(new MyVoiceRecognitionListener());
 
-                mSpeechRecognizer.startListening(mRecognizerIntent);
+                try {
+                    mSpeechRecognizer.startListening(mRecognizerIntent);
+                } catch (Exception e) {
+                    Log.e(TAG, "system recognizer refused to start", e);
+                    cancelVoiceRecording();
+                    startExternalRecognition();
+                }
             } else {
                 startExternalRecognition();
-
-                //String noRecognition = "Seems that the voice recognition is not enabled on your device";
-                //
-                //MessageHelpers.showLongMessage(context, noRecognition);
-                //
-                //Log.e(TAG, noRecognition);
             }
         } else {
             Helpers.startActivity(context, PermissionsActivity.class);
         }
+    }
+
+    /**
+     * Whether any app actually implements RecognitionService. Without one the framework logs
+     * "no selected voice recognition service" and the recognizer silently does nothing.
+     */
+    private static boolean hasRecognitionService(Context context) {
+        List<ResolveInfo> services = context.getPackageManager()
+                .queryIntentServices(new Intent(RecognitionService.SERVICE_INTERFACE), 0);
+
+        return services != null && !services.isEmpty();
+    }
+
+    /**
+     * Whether some app can handle the RECOGNIZE_SPEECH intent we would hand over to
+     */
+    private boolean hasExternalRecognizer() {
+        List<ResolveInfo> activities = mContext.getPackageManager()
+                .queryIntentActivities(new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH), 0);
+
+        return activities != null && !activities.isEmpty();
     }
 
     /**
@@ -595,9 +633,20 @@ public class LeanbackKeyboardContainer {
             mWhisperRecognizer = new WhisperRecognizer(context);
         }
 
-        // fall back to the other backends while the model hasn't been downloaded yet
-        if (!mWhisperRecognizer.isReady(model) || mWhisperRecognizer.isBusy()) {
+        if (mWhisperRecognizer.isBusy()) {
+            return true; // already recording, ignore the second press
+        }
+
+        // no engine here, let the external backends have a go
+        if (!WhisperLib.isAvailable()) {
             return false;
+        }
+
+        // first use: fetch the model instead of silently handing over to a recognizer
+        // that most tv boxes don't have
+        if (!mWhisperRecognizer.getModels().isDownloaded(model)) {
+            downloadModelForVoice(model);
+            return true;
         }
 
         if (!PermissionHelpers.hasMicPermissions(context)) {
@@ -642,10 +691,55 @@ public class LeanbackKeyboardContainer {
     }
 
     /**
+     * Pull the voice model in the background the first time the mic is used, reporting
+     * progress as toasts since the keyboard has nowhere else to show it.
+     */
+    private void downloadModelForVoice(WhisperModel model) {
+        cancelVoiceRecording(); // nothing to record yet, drop the overlay
+
+        WhisperModelManager models = mWhisperRecognizer.getModels();
+
+        if (models.isDownloading()) {
+            MessageHelpers.showMessage(mContext, mContext.getString(R.string.voice_model_downloading, 0));
+            return;
+        }
+
+        MessageHelpers.showMessage(mContext, mContext.getString(R.string.voice_model_download_started, model.getSizeMb()));
+
+        models.download(model, new WhisperModelManager.DownloadListener() {
+            private int mLastStep = -1;
+
+            @Override
+            public void onProgress(int percent) {
+                if (percent >= 0 && percent / 25 != mLastStep) {
+                    mLastStep = percent / 25;
+                    MessageHelpers.showMessage(mContext, mContext.getString(R.string.voice_model_downloading, percent));
+                }
+            }
+
+            @Override
+            public void onDone(java.io.File file) {
+                MessageHelpers.showMessage(mContext, mContext.getString(R.string.voice_model_ready_press_mic));
+            }
+
+            @Override
+            public void onError(String message) {
+                MessageHelpers.showLongMessage(mContext, mContext.getString(R.string.voice_model_failed, message));
+            }
+        });
+    }
+
+    /**
      * Hand the recognition over to another app (FUTO Voice Input or whatever handles
      * RECOGNIZE_SPEECH) and restore the keyboard once it's done.
      */
     private void startExternalRecognition() {
+        if (!hasExternalRecognizer()) {
+            cancelVoiceRecording(); // nothing would ever call back, don't leave the overlay up
+            MessageHelpers.showLongMessage(mContext, mContext.getString(R.string.voice_no_engine));
+            return;
+        }
+
         mRecognizerIntentWrapper.setListener(searchText -> {
             cancelVoiceRecording(); // our own recording overlay is not used in this flow
 
@@ -682,6 +776,8 @@ public class LeanbackKeyboardContainer {
     }
 
     public void cancelVoiceRecording() {
+        mHandler.removeCallbacks(mVoiceWatchdog);
+
         if (mWhisperRecognizer != null && mWhisperRecognizer.isBusy()) {
             mWhisperRecognizer.cancel();
         }
@@ -1438,11 +1534,21 @@ public class LeanbackKeyboardContainer {
     public void startVoiceRecording() {
         if (mVoiceEnabled) {
             if (!mVoiceKeyDismissesEnabled) {
+                armVoiceWatchdog();
                 mVoiceAnimator.startEnterAnimation();
             } else {
                 mDismissListener.onDismiss(true);
             }
         }
+    }
+
+    /**
+     * Last resort against a voice overlay that never gets dismissed: a backend that dies
+     * without calling back used to leave it on screen until the device was restarted.
+     */
+    private void armVoiceWatchdog() {
+        mHandler.removeCallbacks(mVoiceWatchdog);
+        mHandler.postDelayed(mVoiceWatchdog, VOICE_WATCHDOG_MS);
     }
 
     /**
