@@ -57,20 +57,21 @@ public final class WhisperLib {
     /**
      * @param audio mono samples at 16 kHz normalized to [-1, 1]
      * @param language iso code or "auto"
+     * @param audioCtx encoder context size, 0 keeps whisper's full 30 s window
      */
-    public static String transcribe(long context, float[] audio, int threads, String language, boolean translate) {
+    public static String transcribe(long context, float[] audio, int threads, String language, boolean translate, int audioCtx) {
         if (context == 0L) {
             return "";
         }
 
-        return nativeTranscribe(context, audio, threads, language, translate);
+        return nativeTranscribe(context, audio, threads, language, translate, audioCtx);
     }
 
     private static native long nativeInitContext(String modelPath);
 
     private static native void nativeFreeContext(long context);
 
-    private static native String nativeTranscribe(long context, float[] audio, int threads, String language, boolean translate);
+    private static native String nativeTranscribe(long context, float[] audio, int threads, String language, boolean translate, int audioCtx);
 
     private static native String nativeSystemInfo();
 }

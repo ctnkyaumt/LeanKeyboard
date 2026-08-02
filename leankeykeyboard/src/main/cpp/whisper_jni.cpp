@@ -53,7 +53,7 @@ JNI_METHOD(nativeFreeContext)(JNIEnv *, jclass, jlong contextPtr) {
  */
 JNIEXPORT jstring JNICALL
 JNI_METHOD(nativeTranscribe)(JNIEnv *env, jclass, jlong contextPtr, jfloatArray audio,
-                             jint threads, jstring language, jboolean translate) {
+                             jint threads, jstring language, jboolean translate, jint audioCtx) {
     auto *ctx = reinterpret_cast<whisper_context *>(contextPtr);
 
     if (ctx == nullptr) {
@@ -76,6 +76,13 @@ JNI_METHOD(nativeTranscribe)(JNIEnv *env, jclass, jlong contextPtr, jfloatArray 
     params.no_context = true;
     params.single_segment = false;
     params.suppress_nst = true; // drop "(music)" and similar non speech markers
+
+    // whisper pads every input to a 30 s window, so a two second command costs a full
+    // encoder pass. Shrinking the audio context to what the audio actually needs is the
+    // difference between a usable and an unusable latency on a tv box.
+    if (audioCtx > 0) {
+        params.audio_ctx = audioCtx;
+    }
 
     std::string result;
 

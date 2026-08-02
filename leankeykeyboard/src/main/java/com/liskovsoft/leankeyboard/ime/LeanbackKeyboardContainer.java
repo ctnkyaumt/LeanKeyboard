@@ -137,8 +137,19 @@ public class LeanbackKeyboardContainer {
     private RecognizerIntentWrapper mRecognizerIntentWrapper;
     private WhisperRecognizer mWhisperRecognizer;
     private final Handler mHandler = new Handler(Looper.getMainLooper());
-    private final Runnable mVoiceWatchdog = () -> {
-        if (isVoiceVisible()) {
+    private final Runnable mVoiceWatchdog = new Runnable() {
+        @Override
+        public void run() {
+            if (!isVoiceVisible()) {
+                return;
+            }
+
+            // transcription is still running, killing it here would throw the result away
+            if (mWhisperRecognizer != null && mWhisperRecognizer.isBusy()) {
+                mHandler.postDelayed(this, VOICE_WATCHDOG_MS);
+                return;
+            }
+
             Log.w(TAG, "voice backend never reported back, dropping the overlay");
             cancelVoiceRecording();
         }

@@ -22,6 +22,8 @@ public class WhisperRecognizer {
     private static final int CHANNELS = AudioFormat.CHANNEL_IN_MONO;
     private static final int ENCODING = AudioFormat.ENCODING_PCM_16BIT;
     private static final int MAX_RECORDING_MS = 20_000;
+    /** Hard stop in real time, for mics that deliver much slower than realtime */
+    private static final int MAX_RECORDING_WALL_MS = 25_000;
     /** Recording stops once the user has been quiet for this long */
     private static final int TRAILING_SILENCE_MS = 1_200;
     /** Give the user a chance to start talking before silence counts */
@@ -34,6 +36,11 @@ public class WhisperRecognizer {
     private static final int MAX_EMPTY_READS = 20;
     /** Peak level under which the recording is treated as pure silence */
     private static final float SILENCE_PEAK = 0.003f;
+    /** Encoder context whisper uses for a full 30 s window */
+    private static final int FULL_AUDIO_CTX = 1500;
+    private static final int MIN_AUDIO_CTX = 256;
+    private static final int AUDIO_CTX_STEP = 128;
+    private static final int WHISPER_WINDOW_MS = 30_000;
 
     private final Context mContext;
     private final WhisperModelManager mModels;
@@ -222,7 +229,9 @@ public class WhisperRecognizer {
             post(listener::onReadyForSpeech);
 
             long startedAt = System.currentTimeMillis();
-            long lastSpeechAt = startedAt;
+            // silence is measured in captured audio, not wall clock: some tv mics deliver far
+            // slower than realtime and a wall clock timer cuts the user off mid sentence
+            int samplesAtLastSpeech = 0;
             boolean heardSpeech = false;
             int emptyReads = 0;
 
@@ -246,22 +255,24 @@ public class WhisperRecognizer {
                 float level = rms(chunk, read);
                 post(() -> listener.onLevel(toDisplayLevel(level)));
 
-                long now = System.currentTimeMillis();
-
                 if (level > SPEECH_THRESHOLD) {
                     heardSpeech = true;
-                    lastSpeechAt = now;
+                    samplesAtLastSpeech = total;
                 }
 
-                long elapsed = now - startedAt;
-
-                if (mStopRequested && elapsed > MIN_RECORDING_MS) {
+                if (mStopRequested && msOf(total) > MIN_RECORDING_MS) {
                     break;
                 }
 
-                boolean graceOver = heardSpeech || elapsed > LEADING_GRACE_MS;
+                // a mic that never warms up would otherwise keep us here forever
+                if (System.currentTimeMillis() - startedAt > MAX_RECORDING_WALL_MS) {
+                    Log.w(TAG, "recording wall clock limit reached with " + msOf(total) + " ms of audio");
+                    break;
+                }
 
-                if (graceOver && now - lastSpeechAt > TRAILING_SILENCE_MS) {
+                boolean graceOver = heardSpeech || msOf(total) > LEADING_GRACE_MS;
+
+                if (graceOver && msOf(total - samplesAtLastSpeech) > TRAILING_SILENCE_MS) {
                     break;
                 }
             }
@@ -302,8 +313,30 @@ public class WhisperRecognizer {
         }
 
         int threads = Math.max(1, Math.min(MAX_THREADS, Runtime.getRuntime().availableProcessors()));
+        int audioCtx = audioContextFor(samples.length);
 
-        return WhisperLib.transcribe(mContextPtr, audio, threads, normalizeLanguage(language), false);
+        long startedAt = System.currentTimeMillis();
+        String text = WhisperLib.transcribe(mContextPtr, audio, threads, normalizeLanguage(language), false, audioCtx);
+        Log.i(TAG, "transcribed " + msOf(samples.length) + " ms of audio in "
+                + (System.currentTimeMillis() - startedAt) + " ms (threads=" + threads + ", audio_ctx=" + audioCtx + ")");
+
+        return text;
+    }
+
+    /**
+     * Encoder context matching the audio length. whisper always pads to a 30 s window, so
+     * without this a one second command costs the same as a full half minute of speech.
+     */
+    private static int audioContextFor(int sampleCount) {
+        // 20% headroom so the tail of the audio isn't clipped by a too tight context
+        int needed = (int) Math.ceil(FULL_AUDIO_CTX * (msOf(sampleCount) * 1.2 / WHISPER_WINDOW_MS));
+        int rounded = (needed + AUDIO_CTX_STEP - 1) / AUDIO_CTX_STEP * AUDIO_CTX_STEP;
+
+        return Math.max(MIN_AUDIO_CTX, Math.min(FULL_AUDIO_CTX, rounded));
+    }
+
+    private static long msOf(int sampleCount) {
+        return sampleCount * 1000L / SAMPLE_RATE;
     }
 
     /**
