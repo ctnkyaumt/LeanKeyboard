@@ -2,11 +2,15 @@ cmake_minimum_required(VERSION 3.22.1)
 
 project(leankey_whisper C CXX)
 
-# A debug apk builds its native code with CMAKE_BUILD_TYPE=Debug, which compiles ggml at -O0.
-# That makes transcription tens of times slower and looks exactly like a hang, so the engine is
-# always built optimized no matter which apk variant pulls it in.
-set(CMAKE_C_FLAGS_DEBUG   "-O3 -DNDEBUG" CACHE STRING "" FORCE)
-set(CMAKE_CXX_FLAGS_DEBUG "-O3 -DNDEBUG" CACHE STRING "" FORCE)
+# A debug apk configures cmake with CMAKE_BUILD_TYPE=Debug, and the ndk's debug flags carry no
+# -O at all, so ggml lands on clang's -O0 default and transcription becomes tens of times
+# slower - indistinguishable from a hang on a tv box.
+#
+# Overriding CMAKE_<LANG>_FLAGS_DEBUG does not survive here: ggml/CMakeLists.txt runs its own
+# project() call, which re-reads the toolchain and restores the defaults. Directory compile
+# options are inherited by every subdirectory instead, and land after the config flags on the
+# command line, so this wins wherever it ends up.
+add_compile_options(-O3 -DNDEBUG)
 
 # whisper.cpp / ggml build switches. Everything we don't need is turned off to keep
 # the native library small and the CI build short.
