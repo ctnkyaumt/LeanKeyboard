@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Text editing actions. Shown as a mini keyboard on long press of the clipboard key. -->
+<Keyboard android:keyWidth="@dimen/key_width" android:keyHeight="@dimen/key_height" android:horizontalGap="@dimen/keyboard_horizontal_gap" android:verticalGap="@dimen/keyboard_vertical_gap"
+  xmlns:android="http://schemas.android.com/apk/res/android">
+    <Row>
+        <Key android:codes="-11" android:keyLabel="@string/keyboardview_keycode_select_all" android:keyIcon="@drawable/ic_ime_select_all" />
+        <Key android:codes="-12" android:keyLabel="@string/keyboardview_keycode_select_line" android:keyIcon="@drawable/ic_ime_select_line" />
+        <Key android:codes="-13" android:keyLabel="@string/keyboardview_keycode_copy" android:keyIcon="@drawable/ic_ime_copy" />
+        <Key android:codes="-14" android:keyLabel="@string/keyboardview_keycode_cut" android:keyIcon="@drawable/ic_ime_cut" />
+        <Key android:codes="-10" android:keyLabel="@string/keyboardview_keycode_clipboard" android:keyIcon="@drawable/ic_ime_clipboard" />
+        <Key android:codes="-15" android:keyLabel="@string/keyboardview_keycode_back" android:keyIcon="@drawable/ic_ime_back" />
+    </Row>
+</Keyboard>

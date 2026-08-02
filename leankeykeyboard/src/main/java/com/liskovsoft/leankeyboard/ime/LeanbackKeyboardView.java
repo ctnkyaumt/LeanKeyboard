@@ -47,7 +47,13 @@ public class LeanbackKeyboardView extends FrameLayout {
     public static final int KEYCODE_SYM_TOGGLE = -2;
     public static final int KEYCODE_VOICE = -7;
     public static final int KEYCODE_LANG_TOGGLE = -9;
+    /** Paste from clipboard */
     public static final int KEYCODE_CLIPBOARD = -10;
+    public static final int KEYCODE_SELECT_ALL = -11;
+    public static final int KEYCODE_SELECT_LINE = -12;
+    public static final int KEYCODE_COPY = -13;
+    public static final int KEYCODE_CUT = -14;
+    public static final int KEYCODE_BACK = -15;
     public static final int NOT_A_KEY = -1;
     public static final int SHIFT_LOCKED = 2;
     public static final int SHIFT_OFF = 0;
@@ -463,6 +469,14 @@ public class LeanbackKeyboardView extends FrameLayout {
             int nextRow = (mFocusIndex + totalAccentKeys) / mColCount;
             if (currentRow != nextRow) {
                 baseIndex = mColCount * nextRow - totalAccentKeys;
+            }
+
+            // wide popups near the end of the keyboard would otherwise run past the last key
+            baseIndex = Math.max(0, Math.min(baseIndex, mKeys.length - totalAccentKeys));
+
+            if (baseIndex < 0) { // popup is wider than the whole keyboard
+                dismissMiniKeyboard();
+                return;
             }
 
             mBaseMiniKbIndex = baseIndex;

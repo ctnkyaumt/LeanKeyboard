@@ -346,6 +346,21 @@ public class LeanbackKeyboardController implements LeanbackKeyboardContainer.Voi
 
                 mContainer.onClipboardClick(mInputListener);
                 return;
+            case LeanbackKeyboardView.KEYCODE_SELECT_ALL:
+                mContainer.onSelectAllClick();
+                return;
+            case LeanbackKeyboardView.KEYCODE_SELECT_LINE:
+                mContainer.onSelectLineClick();
+                return;
+            case LeanbackKeyboardView.KEYCODE_COPY:
+                mContainer.onCopyClick(false);
+                return;
+            case LeanbackKeyboardView.KEYCODE_CUT:
+                mContainer.onCopyClick(true);
+                return;
+            case LeanbackKeyboardView.KEYCODE_BACK:
+                mContainer.onBackClick();
+                return;
             default:
                 mInputListener.onEntry(InputListener.ENTRY_TYPE_STRING, keyCode, text);
                 mContainer.onTextEntry();

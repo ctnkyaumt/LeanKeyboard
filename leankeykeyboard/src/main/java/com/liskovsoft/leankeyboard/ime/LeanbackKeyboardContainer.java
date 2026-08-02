@@ -1254,10 +1254,10 @@ public class LeanbackKeyboardContainer {
 
         if (clipBoard != null) {
             ClipData clipData = clipBoard.getPrimaryClip();
-            if (clipData != null) {
+            if (clipData != null && clipData.getItemCount() > 0) {
                 ClipData.Item item = clipData.getItemAt(0);
-                String text = item.getText().toString();
-                if (listener != null) {
+                CharSequence text = item.coerceToText(mContext);
+                if (listener != null && !TextUtils.isEmpty(text)) {
                     listener.onEntry(InputListener.ENTRY_TYPE_STRING, LeanbackKeyboardView.NOT_A_KEY, text);
                 }
             }
@@ -1474,6 +1474,71 @@ public class LeanbackKeyboardContainer {
             if (isVoiceVisible() && !mValueAnimator.isRunning()) {
                 start(false);
             }
+        }
+
+        closeEditMenu();
+    }
+
+    /**
+     * Select the whole editor content
+     */
+    public void onSelectAllClick() {
+        InputConnection connection = mContext.getCurrentInputConnection();
+
+        if (connection != null) {
+            connection.performContextMenuAction(android.R.id.selectAll);
+        }
+
+        closeEditMenu();
+    }
+
+    /**
+     * Select the line (paragraph) the caret currently sits on
+     */
+    public void onSelectLineClick() {
+        InputConnection connection = mContext.getCurrentInputConnection();
+
+        if (connection != null) {
+            int[] bounds = LeanbackUtils.getCurrentLineBounds(connection);
+
+            if (bounds != null) {
+                connection.setSelection(bounds[0], bounds[1]);
+            }
+        }
+
+        closeEditMenu();
+    }
+
+    /**
+     * Put the selection into the clipboard
+     * @param cut whether the selection should also be removed
+     */
+    public void onCopyClick(boolean cut) {
+        InputConnection connection = mContext.getCurrentInputConnection();
+
+        if (connection != null) {
+            if (LeanbackUtils.hasSelection(connection)) {
+                connection.performContextMenuAction(cut ? android.R.id.cut : android.R.id.copy);
+                MessageHelpers.showMessage(mContext, mContext.getString(R.string.msg_copied));
+            } else {
+                MessageHelpers.showMessage(mContext, mContext.getString(R.string.msg_nothing_selected));
+            }
+        }
+
+        closeEditMenu();
+    }
+
+    /**
+     * Same as pressing the remote's back button: closes the keyboard
+     */
+    public void onBackClick() {
+        closeEditMenu();
+        mContext.hideIme();
+    }
+
+    private void closeEditMenu() {
+        if (dismissMiniKeyboard()) {
+            moveFocusToIndex(mMiniKbKeyIndex, KeyFocus.TYPE_MAIN);
         }
     }
 
