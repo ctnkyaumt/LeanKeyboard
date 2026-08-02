@@ -1,0 +1,4 @@
+[submodule "leankeykeyboard/src/main/cpp/whisper.cpp"]
+	path = leankeykeyboard/src/main/cpp/whisper.cpp
+	url = https://github.com/ggerganov/whisper.cpp
+	branch = master

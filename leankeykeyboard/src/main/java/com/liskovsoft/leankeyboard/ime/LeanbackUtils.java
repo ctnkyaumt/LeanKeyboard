@@ -11,6 +11,8 @@ import android.view.View;
 import android.view.WindowManager;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.inputmethod.EditorInfo;
+import android.view.inputmethod.ExtractedText;
+import android.view.inputmethod.ExtractedTextRequest;
 import android.view.inputmethod.InputConnection;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.LinearLayout;
@@ -69,9 +71,93 @@ public class LeanbackUtils {
         return pos;
     }
 
+    /**
+     * Max amount of chars requested from the editor when the exact text is needed.<br/>
+     * NOTE: don't use this limit to calculate the cursor position (see {@link #getCursorPos}).
+     */
+    public static final int MAX_TEXT_LEN = 100_000;
+
+    /**
+     * Snapshot of the whole editor content. Returns null when the editor doesn't support extraction
+     * (e.g. it's busy or the connection is dead).
+     */
+    public static ExtractedText getExtractedText(InputConnection connection) {
+        if (connection == null) {
+            return null;
+        }
+
+        ExtractedTextRequest request = new ExtractedTextRequest();
+        request.token = 0;
+        request.hintMaxChars = MAX_TEXT_LEN;
+        request.hintMaxLines = Integer.MAX_VALUE;
+
+        return connection.getExtractedText(request, 0);
+    }
+
+    /**
+     * Absolute cursor position (selection start) or -1 when it can't be obtained.<br/>
+     * Fixes broken navigation on texts longer than 1000 chars.
+     */
+    public static int getCursorPos(InputConnection connection) {
+        ExtractedText extracted = getExtractedText(connection);
+
+        if (extracted == null) {
+            return -1;
+        }
+
+        return extracted.startOffset + Math.min(extracted.selectionStart, extracted.selectionEnd);
+    }
+
+    /**
+     * Absolute end of the selection or -1 when it can't be obtained.
+     */
+    public static int getSelectionEndPos(InputConnection connection) {
+        ExtractedText extracted = getExtractedText(connection);
+
+        if (extracted == null) {
+            return -1;
+        }
+
+        return extracted.startOffset + Math.max(extracted.selectionStart, extracted.selectionEnd);
+    }
+
+    /**
+     * Absolute start/end offsets of the line (paragraph) holding the caret.
+     * @return {start, end} or null when the editor doesn't support extraction
+     */
+    public static int[] getCurrentLineBounds(InputConnection connection) {
+        ExtractedText extracted = getExtractedText(connection);
+
+        if (extracted == null || extracted.text == null || extracted.selectionStart < 0) {
+            return null;
+        }
+
+        CharSequence text = extracted.text;
+        int len = text.length();
+        int caret = Math.max(0, Math.min(Math.min(extracted.selectionStart, extracted.selectionEnd), len));
+
+        int start = caret;
+        while (start > 0 && text.charAt(start - 1) != '\n') {
+            start--;
+        }
+
+        int end = caret;
+        while (end < len && text.charAt(end) != '\n') {
+            end++;
+        }
+
+        return new int[] {extracted.startOffset + start, extracted.startOffset + end};
+    }
+
+    public static boolean hasSelection(InputConnection connection) {
+        CharSequence selected = connection == null ? null : connection.getSelectedText(0);
+
+        return selected != null && selected.length() > 0;
+    }
+
     public static int getCharLengthAfterCursor(InputConnection connection) {
         int len = 0;
-        CharSequence after = connection.getTextAfterCursor(1000, 0);
+        CharSequence after = connection.getTextAfterCursor(MAX_TEXT_LEN, 0);
         if (after != null) {
             len = after.length();
         }
@@ -81,7 +167,7 @@ public class LeanbackUtils {
 
     public static int getCharLengthBeforeCursor(InputConnection connection) {
         int len = 0;
-        CharSequence before = connection.getTextBeforeCursor(1000, 0);
+        CharSequence before = connection.getTextBeforeCursor(MAX_TEXT_LEN, 0);
         if (before != null) {
             len = before.length();
         }
@@ -91,8 +177,8 @@ public class LeanbackUtils {
 
     public static String getEditorText(InputConnection connection) {
         StringBuilder result = new StringBuilder();
-        CharSequence before = connection.getTextBeforeCursor(1000, 0);
-        CharSequence after = connection.getTextAfterCursor(1000, 0);
+        CharSequence before = connection.getTextBeforeCursor(MAX_TEXT_LEN, 0);
+        CharSequence after = connection.getTextAfterCursor(MAX_TEXT_LEN, 0);
         if (before != null) {
             result.append(before);
         }
