@@ -43,6 +43,8 @@ public class WhisperRecognizer {
     private static final int MAX_EMPTY_READS = 20;
     /** Peak level under which the recording is treated as pure silence */
     private static final float SILENCE_PEAK = 0.003f;
+    /** Whether the encoder context is trimmed to the audio length, see audioContextFor */
+    private static final boolean SHRINK_AUDIO_CONTEXT = false;
     /** Encoder context whisper uses for a full 30 s window */
     private static final int FULL_AUDIO_CTX = 1500;
     private static final int MIN_AUDIO_CTX = 256;
@@ -56,6 +58,8 @@ public class WhisperRecognizer {
     private volatile boolean mStopRequested;
     private volatile boolean mCancelled;
     private volatile boolean mBusy;
+    /** Set when a transcription had to be abandoned, the engine can't be trusted afterwards */
+    private volatile boolean mEngineUnusable;
     private long mContextPtr;
     private WhisperModel mLoadedModel;
 
@@ -87,7 +91,14 @@ public class WhisperRecognizer {
      * Whether recognition can run right now: native library present and model downloaded.
      */
     public boolean isReady(WhisperModel model) {
-        return WhisperLib.isAvailable() && mModels.isDownloaded(model);
+        return WhisperLib.isAvailable() && !mEngineUnusable && mModels.isDownloaded(model);
+    }
+
+    /**
+     * Whether the engine had to be retired after a transcription that would not stop
+     */
+    public boolean isEngineUnusable() {
+        return mEngineUnusable;
     }
 
     public boolean isBusy() {
@@ -333,6 +344,13 @@ public class WhisperRecognizer {
         Runnable abort = () -> {
             Log.w(TAG, "transcription exceeded " + TRANSCRIBE_TIMEOUT_MS + " ms, aborting");
             WhisperLib.requestAbort(true);
+            // whisper only notices the abort between compute steps, and it evidently can sit
+            // somewhere that never checks. The stuck thread still holds the transcribe monitor
+            // and the native context, so retiring the engine is the only safe move: the
+            // microphone keeps working through the other backends instead of wedging again.
+            mBusy = false;
+            mCancelled = true;
+            mEngineUnusable = true;
         };
         timeout.postDelayed(abort, TRANSCRIBE_TIMEOUT_MS);
 
@@ -353,10 +371,17 @@ public class WhisperRecognizer {
     }
 
     /**
-     * Encoder context matching the audio length. whisper always pads to a 30 s window, so
-     * without this a one second command costs the same as a full half minute of speech.
+     * Encoder context matching the audio length. whisper always pads to a 30 s window, so in
+     * principle this saves most of the encoder cost on short commands.
+     * <br/>
+     * Disabled for now: a shrunken context is a non default whisper setting and was in play
+     * while transcription was wedging, so it stays off until the engine is known good here.
      */
     private static int audioContextFor(int sampleCount) {
+        if (!SHRINK_AUDIO_CONTEXT) {
+            return 0; // whisper's own full window
+        }
+
         // 20% headroom so the tail of the audio isn't clipped by a too tight context
         int needed = (int) Math.ceil(FULL_AUDIO_CTX * (msOf(sampleCount) * 1.2 / WHISPER_WINDOW_MS));
         int rounded = (needed + AUDIO_CTX_STEP - 1) / AUDIO_CTX_STEP * AUDIO_CTX_STEP;

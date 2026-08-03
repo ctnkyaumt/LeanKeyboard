@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "whisper.h"
+#include "ggml.h"
 
 #define TAG "LeanKeyWhisper"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
@@ -28,10 +29,27 @@ static void on_progress(struct whisper_context *, struct whisper_state *, int pr
     LOGI("transcribe progress %d%%", progress);
 }
 
+/**
+ * whisper and ggml both log their internal phases. Forwarding them to logcat is the only way
+ * to see which phase a transcription is sitting in, since the progress callback only fires
+ * once the decoder is already running.
+ */
+static void on_log(enum ggml_log_level level, const char *text, void *) {
+    if (text == nullptr) {
+        return;
+    }
+
+    __android_log_print(level == GGML_LOG_LEVEL_ERROR ? ANDROID_LOG_ERROR : ANDROID_LOG_INFO,
+                        TAG, "%s", text);
+}
+
 extern "C" {
 
 JNIEXPORT jlong JNICALL
 JNI_METHOD(nativeInitContext)(JNIEnv *env, jclass, jstring modelPath) {
+    whisper_log_set(on_log, nullptr);
+    ggml_log_set(on_log, nullptr);
+
     const char *path = env->GetStringUTFChars(modelPath, nullptr);
 
     whisper_context_params params = whisper_context_default_params();

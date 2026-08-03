@@ -649,7 +649,7 @@ public class LeanbackKeyboardContainer {
         }
 
         // no engine here, let the external backends have a go
-        if (!WhisperLib.isAvailable()) {
+        if (!WhisperLib.isAvailable() || mWhisperRecognizer.isEngineUnusable()) {
             return false;
         }
 
