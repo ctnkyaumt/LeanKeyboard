@@ -688,6 +688,12 @@ public class LeanbackKeyboardContainer {
                 if (mVoiceListener != null && !TextUtils.isEmpty(text)) {
                     mVoiceListener.onVoiceResult(text);
                 }
+
+                if (mWhisperRecognizer.isTooSlow()) {
+                    // stop offering something this cpu cannot deliver, and say so once
+                    LeanKeyPreferences.instance(mContext).setWhisperEnabled(false);
+                    MessageHelpers.showLongMessage(mContext, mContext.getString(R.string.voice_device_too_slow));
+                }
             }
 
             @Override

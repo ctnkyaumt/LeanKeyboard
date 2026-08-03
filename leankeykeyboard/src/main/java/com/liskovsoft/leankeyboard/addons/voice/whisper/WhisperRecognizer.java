@@ -32,11 +32,12 @@ public class WhisperRecognizer {
     private static final int MIN_RECORDING_MS = 500;
     /** Normalized rms above which we consider the user to be talking */
     private static final float SPEECH_THRESHOLD = 0.015f;
+    private static final int MAX_THREADS = 4;
     /**
-     * ggml spins its workers between steps, so more threads than the process actually gets
-     * scheduled on makes it slower, not faster.
+     * A transcription slower than this means the cpu can't keep up with whisper's fixed 30 s
+     * window, and no amount of tuning turns that into a usable keyboard.
      */
-    private static final int MAX_THREADS = 2;
+    private static final long TOO_SLOW_MS = 30_000L;
     /** Give up on a transcription that runs longer than this */
     private static final long TRANSCRIBE_TIMEOUT_MS = 60_000L;
     /** How many empty reads in a row are tolerated before the mic counts as broken */
@@ -60,6 +61,8 @@ public class WhisperRecognizer {
     private volatile boolean mBusy;
     /** Set when a transcription had to be abandoned, the engine can't be trusted afterwards */
     private volatile boolean mEngineUnusable;
+    /** Set when the engine works but this cpu is far too slow to use it */
+    private volatile boolean mTooSlow;
     private long mContextPtr;
     private WhisperModel mLoadedModel;
 
@@ -99,6 +102,13 @@ public class WhisperRecognizer {
      */
     public boolean isEngineUnusable() {
         return mEngineUnusable;
+    }
+
+    /**
+     * Whether recognition works but is far too slow on this cpu to be worth offering
+     */
+    public boolean isTooSlow() {
+        return mTooSlow;
     }
 
     public boolean isBusy() {
@@ -364,8 +374,17 @@ public class WhisperRecognizer {
             WhisperLib.requestAbort(false);
         }
 
+        long took = System.currentTimeMillis() - startedAt;
         Log.i(TAG, "transcribed " + msOf(samples.length) + " ms of audio in "
-                + (System.currentTimeMillis() - startedAt) + " ms (threads=" + threads + ", audio_ctx=" + audioCtx + ")");
+                + took + " ms (threads=" + threads + ", audio_ctx=" + audioCtx + ")");
+
+        // whisper always works on a 30 s window, so anything slower than realtime here is
+        // hopeless for a keyboard no matter how briefly the user spoke
+        if (took > TOO_SLOW_MS) {
+            Log.w(TAG, "this device needs " + took + " ms per transcription, retiring the local engine");
+            mEngineUnusable = true;
+            mTooSlow = true;
+        }
 
         return text;
     }

@@ -187,7 +187,12 @@ public final class LeanKeyPreferences {
                 .apply();
     }
 
+    /**
+     * Defaults to the device language rather than "auto": detecting the language costs whisper
+     * a whole extra encoder pass, which doubles the wait for no benefit on a keyboard that is
+     * almost always typed in one language.
+     */
     public String getWhisperLanguage() {
-        return mPrefs.getString(WHISPER_LANGUAGE, WHISPER_LANGUAGE_AUTO);
+        return mPrefs.getString(WHISPER_LANGUAGE, java.util.Locale.getDefault().getLanguage());
     }
 }
